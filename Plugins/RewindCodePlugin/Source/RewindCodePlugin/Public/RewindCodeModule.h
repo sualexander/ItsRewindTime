@@ -1,11 +1,9 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright It's Rewind Time 2024
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Modules/ModuleManager.h"
-#include "Kismet/GameplayStatics.h"
-#include "RewindCodeModule.generated.h"
 
 class FRewindCodeModule : public IModuleInterface
 {

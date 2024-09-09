@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright It's Rewind Time 2024
 
 #include "RewindCodeModule.h"
 
