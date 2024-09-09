@@ -10,6 +10,7 @@
 
 
 class UInputAction;
+struct FInputActionValue;
 
 UCLASS()
 class REWINDCODEPLUGIN_API ARewindGameMode : public AGameModeBase
@@ -28,12 +29,38 @@ class REWINDCODEPLUGIN_API ARewindPlayerController : public APlayerController
 public:
 	void SetupInputComponent() override;
 
+	UPROPERTY()
 	class UInputMappingContext* InputMapping;
-	UInputAction* MoveAction, *PassTurnAction;
+	UPROPERTY()
+	UInputAction* ForwardMoveAction;
+	UPROPERTY()
+	UInputAction* SideMoveAction;
+	UPROPERTY()
+	UInputAction* PassTurnAction;
 
 	void OnMove();
-	void OnPassTurn();
-	struct FEnhancedInputActionValueBinding* MoveValue;
+	void OnMoveCompleted();
+	struct FEnhancedInputActionValueBinding* ForwardMoveValue, *SideMoveValue;
+	
+	enum EMoveStates
+	{
+		NONE = 0,
+		W = 1 << 0,
+		S = 1 << 1,
+		A = 1 << 2,
+		D = 1 << 3
+	};
+
+	int32 MoveStates;
+	EMoveStates MoveState;
+	TArray<EMoveStates> Stack;
+
+	void OnPassTurn(const FInputActionValue& Value);
+};
+
+class REWINDCODEPLUGIN_API UManager : public UObject
+{
+
 };
 
 UCLASS()
@@ -67,9 +94,3 @@ struct Turn
 
 
 };
-
-class REWINDCODEPLUGIN_API UManager : public UObject
-{
-
-};
-
