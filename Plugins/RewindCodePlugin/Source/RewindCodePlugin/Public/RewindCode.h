@@ -9,8 +9,7 @@
 #include "RewindCode.generated.h"
 
 
-class UInputAction;
-struct FInputActionValue;
+enum EInputStates;
 
 UCLASS()
 class REWINDCODEPLUGIN_API ARewindGameMode : public AGameModeBase
@@ -19,48 +18,38 @@ class REWINDCODEPLUGIN_API ARewindGameMode : public AGameModeBase
 
 public:
 	ARewindGameMode();
+
+	void PostLogin(APlayerController* Controller) override;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	UGameManager* GameManager;
 };
 
-UCLASS(Blueprintable, BlueprintType)
-class REWINDCODEPLUGIN_API ARewindPlayerController : public APlayerController
+class APlayerEntity;
+
+UCLASS()
+class REWINDCODEPLUGIN_API UGameManager : public UObject
 {
 	GENERATED_BODY()
 
 public:
-	void SetupInputComponent() override;
+	UGameManager();
 
-	UPROPERTY()
-	class UInputMappingContext* InputMapping;
-	UPROPERTY()
-	UInputAction* ForwardMoveAction;
-	UPROPERTY()
-	UInputAction* SideMoveAction;
-	UPROPERTY()
-	UInputAction* PassTurnAction;
+	UWorld* WorldContext;
+	class ARewindPlayerController* PlayerController;
 
-	void OnMove();
-	void OnMoveCompleted();
-	struct FEnhancedInputActionValueBinding* ForwardMoveValue, *SideMoveValue;
-	
-	enum EMoveStates
-	{
-		NONE = 0,
-		W = 1 << 0,
-		S = 1 << 1,
-		A = 1 << 2,
-		D = 1 << 3
-	};
+	void HandleInput();
+	void ProcessTurn(EInputStates Input);
+	void OnTurnEnd();
 
-	int32 MoveStates;
-	EMoveStates MoveState;
-	TArray<EMoveStates> Stack;
+	bool bTurn = false;
 
-	void OnPassTurn(const FInputActionValue& Value);
-};
+	double InputTimerStart;
+	EInputStates Buffer;
 
-class REWINDCODEPLUGIN_API UManager : public UObject
-{
-
+	APlayerEntity* Player;
+	TArray<FVector> Grid;
+	int32 BlockSize = 300;
 };
 
 UCLASS()
@@ -75,11 +64,27 @@ public:
 
 };
 
-UCLASS()
+
+
+UCLASS(Blueprintable)
 class REWINDCODEPLUGIN_API APlayerEntity : public AEntity
 {
 	GENERATED_BODY()
 
+public:
+	APlayerEntity();
+
+	void Tick(float DeltaTime) override;
+
+	void Move(FVector Destination);
+
+	FVector Start, End;
+	bool bIsMoving = false;
+	float MoveDuration = 0.3f;
+	float MoveTime;
+
+	DECLARE_DELEGATE(FOnMoveFinished)
+	FOnMoveFinished OnMoveFinished;
 };
 
 

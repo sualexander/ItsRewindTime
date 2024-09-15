@@ -1,110 +1,155 @@
 // Copyright It's Rewind Time 2024
 
 #include "RewindCode.h"
+#include "Input.h"
 
-#include "EnhancedInputSubsystems.h"
-#include "EnhancedInputComponent.h"
 
-#include "InputMappingContext.h"
-
+FString EnumConvertTemp(EInputStates Enum)
+{
+	if (Enum == S) return TEXT("S");
+	else if (Enum == A) return TEXT("A");
+	else if (Enum == D) return TEXT("D");
+	else if (Enum == NONE) return TEXT("None");
+	return TEXT("W");
+}
 
 ARewindGameMode::ARewindGameMode()
 {
 	PlayerControllerClass = ARewindPlayerController::StaticClass();
+	//DefaultPawnClass = nullptr;
 }
 
-void ARewindPlayerController::SetupInputComponent()
+void ARewindGameMode::PostLogin(APlayerController* InController)
 {
-	APlayerController::SetupInputComponent();
+	AGameModeBase::PostLogin(InController);
 
-	//Using the CDO is a bit sus but should be fine I think
-	UInputModifierSwizzleAxis* Swizzle = Cast<UInputModifierSwizzleAxis>(UInputModifierSwizzleAxis::StaticClass()->ClassDefaultObject);
-	UInputModifierNegate* Negate = Cast<UInputModifierNegate>(UInputModifierNegate::StaticClass()->ClassDefaultObject);
+	GameManager = NewObject<UGameManager>(this);
+	GameManager->PlayerController = Cast<ARewindPlayerController>(InController);
+	GameManager->PlayerController->OnInputChanged.BindUObject(GameManager, &UGameManager::HandleInput);
+	//more input bindings
 
-	//We split Forward and Side because of an engine bug where negating on the same axis breaks input recognition in one direction 
-	InputMapping = NewObject<UInputMappingContext>(this);
-	ForwardMoveAction = NewObject<UInputAction>(this);
-	ForwardMoveAction->ValueType = EInputActionValueType::Axis2D;
-	SideMoveAction = NewObject<UInputAction>(this);
-	SideMoveAction->ValueType = EInputActionValueType::Axis2D;
-	PassTurnAction = NewObject<UInputAction>(this);
-
-	InputMapping->MapKey(ForwardMoveAction, EKeys::W);
-	InputMapping->MapKey(ForwardMoveAction, EKeys::S).Modifiers.Append({ Swizzle, Negate });
-	InputMapping->MapKey(SideMoveAction, EKeys::A);
-	InputMapping->MapKey(SideMoveAction, EKeys::D).Modifiers.Append({ Swizzle, Negate });
-	InputMapping->MapKey(PassTurnAction, EKeys::SpaceBar);
-
-	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
-	EnhancedInputComponent->BindAction(ForwardMoveAction, ETriggerEvent::Triggered, this, &ARewindPlayerController::OnMove);
-	EnhancedInputComponent->BindAction(ForwardMoveAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnMoveCompleted);
-	EnhancedInputComponent->BindAction(SideMoveAction, ETriggerEvent::Triggered, this, &ARewindPlayerController::OnMove);
-	EnhancedInputComponent->BindAction(SideMoveAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnMoveCompleted);
-	ForwardMoveValue = &EnhancedInputComponent->BindActionValue(ForwardMoveAction);
-	SideMoveValue = &EnhancedInputComponent->BindActionValue(SideMoveAction);
-
-	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnPassTurn);
-	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnPassTurn);
-
-	UEnhancedInputLocalPlayerSubsystem* Subsystem = GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
-	Subsystem->ClearAllMappings();
-	Subsystem->AddMappingContext(InputMapping, 0);
+	GameManager->PlayerController->GetPawn()->GetRootComponent()->SetMobility(EComponentMobility::Static);
 }
 
-void ARewindPlayerController::OnMove()
+//-----------------------------------------------------------------------------
+
+UGameManager::UGameManager()
 {
-	FVector2D Forward = ForwardMoveValue->GetValue().Get<FVector2D>();
-	FVector2D Side = SideMoveValue->GetValue().Get<FVector2D>();
-	
-	int32 NewMoveStates = 0;
-	if (Forward.X > 0) NewMoveStates |= W;
-	if (Forward.Y < 0) NewMoveStates |= S;
-	if (Side.X > 0) NewMoveStates |= A;
-	if (Side.Y < 0) NewMoveStates |= D;
+	if (!GetWorld()) return;
 
-	if (NewMoveStates == MoveStates) return;
+	WorldContext = GetWorld();
 
-	if ((NewMoveStates & W) != (MoveStates & W)) {
-		NewMoveStates & W ? Stack.Add(W) : Stack.RemoveSingle(W);
-	} else if ((NewMoveStates & S) != (MoveStates & S)) {
-		NewMoveStates & S ? Stack.Add(S) : Stack.RemoveSingle(S);
-	} else if ((NewMoveStates & A) != (MoveStates & A)) {
-		NewMoveStates & A ? Stack.Add(A) : Stack.RemoveSingle(A);
-	} else if ((NewMoveStates & D) != (MoveStates & D)) {
-		NewMoveStates & D ? Stack.Add(D) : Stack.RemoveSingle(D);
+	//All this is temp
+	UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/EngineMeshes/Cube.Cube"));
+
+	for (int32 Y = 0; Y < 10; ++Y) {
+		for (int32 X = 0; X < 10; ++X) {
+			FVector Location(X * BlockSize, Y * BlockSize, 0);
+			Grid.Add(Location);
+			AStaticMeshActor* Actor = GetWorld()->SpawnActor<AStaticMeshActor>(Location, FRotator::ZeroRotator);
+			Actor->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+			Actor->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
+		}
 	}
 
-	if (Stack.IsEmpty()) {
-		MoveState = NONE;
+	Player = GetWorld()->SpawnActor<APlayerEntity>(APlayerEntity::StaticClass(), FVector(0, 0, BlockSize), FRotator::ZeroRotator);
+	Player->OnMoveFinished.BindUObject(this, &UGameManager::OnTurnEnd);
+	Player->SetMobility(EComponentMobility::Movable);
+	Player->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/EditorMeshes/ArcadeEditorSphere.ArcadeEditorSphere")));
+}
+
+void UGameManager::HandleInput()
+{
+	UE_LOG(LogTemp, Warning, TEXT("HandleInput with %s"), *EnumConvertTemp(PlayerController->NewestInput));
+
+	if (PlayerController->NewestInput != NONE) {
+		if (bTurn) InputTimerStart = WorldContext->RealTimeSeconds;
+		else ProcessTurn(NONE);
+	}
+}
+
+void UGameManager::OnTurnEnd()
+{
+	UE_LOG(LogTemp, Warning, TEXT("Ending Turn"));
+	bTurn = false;
+
+	double Elapsed = InputTimerStart - WorldContext->RealTimeSeconds;
+	InputTimerStart = 0;
+
+	if (PlayerController->Stack.IsEmpty()) {
+		if (Buffer != NONE && (Elapsed >= 0 && Elapsed < 0.1f)) {
+			ProcessTurn(Buffer);
+		}
 	} else {
-		MoveState = Stack.Last();
-		if (MoveStates == 0) UE_LOG(LogTemp, Warning, TEXT("Start"));
-	}
-	MoveStates = NewMoveStates;
-
-	FString Dir = "W";
-	if (MoveState == S) Dir = "S";
-	else if (MoveState == A) Dir = "A";
-	else if (MoveState == D) Dir = "D";
-	UE_LOG(LogTemp, Warning, TEXT("%s"), *Dir);
-}
-
-void ARewindPlayerController::OnMoveCompleted()
-{
-	if (Stack.Num() == 1)
-	{
-		Stack.Empty();
-		MoveState = NONE;
-		MoveStates = 0;
-		UE_LOG(LogTemp, Warning, TEXT("Stop"));
+		ProcessTurn(NONE);
 	}
 }
 
-void ARewindPlayerController::OnPassTurn(const FInputActionValue& Value)
+void UGameManager::ProcessTurn(EInputStates Input)
 {
-	bool State = Value.Get<bool>();
-	UE_LOG(LogTemp, Warning, TEXT("PassTurn %s"), State ? TEXT("Start") : TEXT("End"));
+	//ResolveMoment
+
+	//Check rewind tile
+	//check timeline collapse
+
+	//Dispatch animations
+	UE_LOG(LogTemp, Error, TEXT("Starting Turn with %s"), *EnumConvertTemp(PlayerController->NewestInput));
+	bTurn = true;
+	Buffer = NONE;
+
+
+	FVector Offset;
+	switch (Input == NONE ? PlayerController->NewestInput : Input) {
+	case W:
+		Offset = FVector(0, BlockSize, 0);
+		break;
+	case S:
+		Offset = FVector(0, -BlockSize, 0);
+		break;
+	case A:
+		Offset = FVector(BlockSize, 0, 0);
+		break;
+	case D:
+		Offset = FVector(-BlockSize, 0, 0);
+		break;
+	}
+
+	Player->Move(Player->GetActorLocation() + Offset);
 }
+
+
+APlayerEntity::APlayerEntity()
+{
+	PrimaryActorTick.bCanEverTick = true;
+}
+
+void APlayerEntity::Tick(float DeltaTime)
+{
+	AEntity::Tick(DeltaTime);
+
+	if (bIsMoving) {
+		MoveTime += DeltaTime;
+		float Alpha = FMath::Clamp(MoveTime / MoveDuration, 0.0f, 1.0f);
+
+		FVector NewLocation = FMath::Lerp(Start, End, Alpha);
+		SetActorLocation(NewLocation);
+
+		if (Alpha >= 1.0f)
+		{
+			bIsMoving = false;
+			OnMoveFinished.Execute();
+		}
+	}
+}
+
+void APlayerEntity::Move(FVector Target)
+{
+	bIsMoving = true;
+	Start = GetActorLocation();
+	End = Target;
+	MoveTime = 0;
+}
+
 
 AEntity::AEntity()
 {
