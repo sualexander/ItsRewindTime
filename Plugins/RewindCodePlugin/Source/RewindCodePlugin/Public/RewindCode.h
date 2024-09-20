@@ -6,33 +6,29 @@
 #include "Engine/StaticMeshActor.h"
 #include "GameFramework/GameModeBase.h"
 
-
 #include "RewindCode.generated.h"
 
 
 enum EInputStates;
 
-TArray<FLinearColor> COLORS = 
-{
-	FLinearColor(0.f, 0.f, 1.f),
-	FLinearColor(0.f, 1.f, 0.f),
-	FLinearColor(1.f, 0.f, 0.f),
-	FLinearColor(1.f, 0.f, 1.f),
-	FLinearColor(0.f, 1.f, 1.f),
-	FLinearColor(1.f, 1.f, 0.f)
-};
+//TArray<FLinearColor> COLORS = 
+//{
+//	FLinearColor(0.f, 0.f, 1.f),
+//	FLinearColor(0.f, 1.f, 0.f),
+//	FLinearColor(1.f, 0.f, 0.f),
+//	FLinearColor(1.f, 0.f, 1.f),
+//	FLinearColor(0.f, 1.f, 1.f),
+//	FLinearColor(1.f, 1.f, 0.f)
+//};
 
 struct EntityState
 {
-	FIntVector StartingTileLocation;
-	EInputStates Move;
+	FIntVector Move, GridPosition;
 };
 
 struct Turn
 {
 	TArray<EntityState> States;
-
-
 };
 
 UCLASS()
@@ -61,8 +57,9 @@ public:
 
 	UWorld* WorldContext;
 	class ARewindPlayerController* PlayerController;
+	UEntityAnimator* Animator;
 
-	FIntVector StartTileLocation;
+	FIntVector StartGridPosition;
 
 	void HandleInput();
 	void ProcessTurn(EInputStates Input);
@@ -71,35 +68,41 @@ public:
 	void QueueRewind();
 	void DoRewind();
 
-	void BuildLevel();
-
-	//bool bTurn = false;
-	int NumEntitiesAnimating = 0;
-
 	bool bRewindQueued = false;
 
 	double InputTimerStart;
 	EInputStates Buffer;
 
-	APlayerEntity* Player;
-
 	UMaterialInstanceDynamic* PlayerMI;
 
-	TArray<APlayerEntity*> PastEntities;
+	APlayerEntity* Player;
+	TArray<APlayerEntity*> AllPlayers;
 
-	TArray<Turn> CurrentTimeline;
-	TArray<Turn> PrevTimeline;
+	TArray<Turn> Turns;
+	int32 TurnCounter = 0;
 	
-	int32 BlockSize = 300;
+	TArray<AEntity*> Grid;
+	int32 BLOCK_SIZE = 300;
+	int32 WIDTH = 10, LENGTH = 10, HEIGHT = 5;
 
-	enum ETileState {
-		WALL,
-		REWIND_TILE,
-		START_TILE,
-		AIR
-	};
+	int32 Flatten(int32 X, int32 Y, int32 Z) 
+	{
+		return X + (Y * WIDTH) + (Z * WIDTH * LENGTH);
+	}
+	int32 Flatten(const FIntVector& Location)
+	{
+		return Location.X + (Location.Y * WIDTH) + (Location.Z * WIDTH * LENGTH);
+	}
 
-	TMap<FIntVector, ETileState> Grid;
+	void UpdateEntityPosition(AEntity* Entity, const FIntVector& Delta);
+};
+
+//move base entity stuff into seperate file
+enum EntityFlags : uint32
+{
+	PLAYER = 1U,
+	MOVEABLE = 2U,
+	REWIND = 4U
 };
 
 UCLASS()
@@ -108,22 +111,9 @@ class REWINDCODEPLUGIN_API AEntity : public AStaticMeshActor
 	GENERATED_BODY()
 
 public:
-	AEntity();
-
-	int32 Flags; //moveable, unmoveable, player, timelines?
-
-	UPROPERTY()
-	UEntityAnimatorComponent* Animator;
-
-	FIntVector TileLocation;
-
-	void Init(FIntVector Loc);
-
-	void RefreshLocation();
-
+	uint32 Flags = 0;
+	FIntVector GridPosition;
 };
-
-
 
 UCLASS(Blueprintable)
 class REWINDCODEPLUGIN_API APlayerEntity : public AEntity
@@ -133,74 +123,47 @@ class REWINDCODEPLUGIN_API APlayerEntity : public AEntity
 public:
 	APlayerEntity();
 
-	void Tick(float DeltaTime) override;
-
-	void Move(FVector Destination);
-
-	bool bIsActivePlayer = false;
-
-	FVector Start, End;
-	bool bIsMoving = false;
-	float MoveDuration = 0.3f;
-	float MoveTime;
-
-	bool AttemptMove(EInputStates InputDir, TMap<FIntVector, UGameManager::ETileState> Grid, EntityState& State);
-
-	DECLARE_DELEGATE(FOnMoveFinished)
-	FOnMoveFinished OnMoveFinished;
-
-	DECLARE_DELEGATE(FOnHitRewindTile)
-	FOnHitRewindTile OnHitRewindTile;
+	void Init(FIntVector Loc);
 };
 
-UCLASS(Blueprintable)
-class REWINDCODEPLUGIN_API UEntityAnimatorComponent : public UActorComponent
+//------------------------------------------------
+
+struct EntityPath
+{
+	EntityPath(AEntity* Entity, TArray<FIntVector>& Path);
+
+	AEntity* Entity;
+	TArray<FIntVector> Path;
+	int32 PathIndex = 0;
+	double StartTime = 0;
+};
+
+UCLASS()
+class REWINDCODEPLUGIN_API UEntityAnimator : public UObject, public FTickableGameObject
 {
 	GENERATED_BODY()
 
 public:
-	UPROPERTY()
-	FTransform PreviousTransform;
+	void Tick(float DeltaTime) override;
+	bool IsTickable() const override { return bIsAnimating; }
+	bool bIsAnimating = false;
+	TStatId GetStatId() const override 
+	{ 
+		RETURN_QUICK_DECLARE_CYCLE_STAT(UEntityAnimator, STATGROUP_Tickables); 
+	}
 
-	bool bIsAnimating;
+	void Start(TArray<EntityPath>& Paths);
+	UWorld* WorldContext;
 
-	double AnimStartTime;
+	DECLARE_DELEGATE(FOnAnimationsFinished)
+	FOnAnimationsFinished OnAnimationsFinished;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Animation", BlueprintReadWrite)
-	FVectorCurve MoveLocationCurve;
+	TArray<TArray<EntityPath>> Queue;
+	int32 QueueIndex = 0;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Animation", BlueprintReadWrite)
-	FVectorCurve MoveRotationCurve;
+	float StartTime;
+	float HorizontalSpeed = 0.5, VerticalSpeed = 0.3;
 
-
-	UEntityAnimatorComponent();
-
-	void UpdateAnimation();
-
-	enum EEntityAnimations {
-		FORWARD,
-		BACKWARD,
-		LEFT,
-		RIGHT,
-		DOWN
-	};
-
-	TArray<EEntityAnimations> AnimationStack;
-
-	void QueueAnimation(EEntityAnimations Animation);
-	void ClearAnimQueue();
-
-	UFUNCTION()
-	bool DoAnimationFrame();
-
-	//UFUNCTION()
-	static double GetDefaultAnimationTime(EEntityAnimations Animation);
-	static FTransform InterpolateAnimation(EEntityAnimations Animation, double Time, double MaxTime, FTransform prev);
-
-	UFUNCTION()
-	FORCEINLINE bool IsAnimating() { return bIsAnimating || (AnimationStack.Num() > 0); }
-
-
-
+	/*UPROPERTY(EditDefaultsOnly, Category = "Animation", BlueprintReadWrite)
+	FVectorCurve MoveLocationCurve;*/
 };
-

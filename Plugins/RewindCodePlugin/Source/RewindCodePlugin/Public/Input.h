@@ -3,7 +3,6 @@
 #pragma once
 
 #include "CoreMinimal.h"
-
 #include "EnhancedInputComponent.h"
 
 #include "Input.generated.h"
