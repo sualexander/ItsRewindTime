@@ -114,7 +114,7 @@ void UGameManager::HandleInput()
 	}
 
 	if (PlayerController->NewestInput != NONE) {
-		if (bTurn) InputTimerStart = WorldContext->RealTimeSeconds;
+		if (NumEntitiesAnimating > 0) InputTimerStart = WorldContext->RealTimeSeconds;
 		else ProcessTurn(NONE);
 	}
 }
@@ -122,7 +122,9 @@ void UGameManager::HandleInput()
 void UGameManager::OnTurnEnd()
 {
 	UE_LOG(LogTemp, Warning, TEXT("Ending Turn"));
-	bTurn = false;
+	//bTurn = false;
+	NumEntitiesAnimating--;
+	if (NumEntitiesAnimating > 0) return;
 
 	double Elapsed = InputTimerStart - WorldContext->RealTimeSeconds;
 	InputTimerStart = 0;
@@ -150,7 +152,6 @@ void UGameManager::QueueRewind()
 
 void UGameManager::DoRewind()
 {
-	Player->Init(StartTileLocation);
 	bRewindQueued = false;
 
 	PrevTimeline = CurrentTimeline;
@@ -164,7 +165,9 @@ void UGameManager::DoRewind()
 		PastEntities[i]->Init(StartTileLocation);
 	}
 
-	//NewPlayer->OnMoveFinished.BindUObject(this, &UGameManager::OnTurnEnd);
+	Player->Init(StartTileLocation);
+
+	NewPlayer->OnMoveFinished.BindUObject(this, &UGameManager::OnTurnEnd);
 	NewPlayer->SetMobility(EComponentMobility::Movable);
 	NewPlayer->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Meshes/RewindCube")));
 	PastEntities.Add(NewPlayer);
@@ -228,12 +231,14 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	Turn Turn;
 	Turn.States.SetNum(PastEntities.Num() + 1);
 
+	int n = 0;
+
 	for (int i = PastEntities.Num() - 1; i >= 0; i--)
 	{
 		EntityState s;
 		EInputStates pastMoveInput = EInputStates::NONE;
 		if (CurrentTimeline.Num() < PrevTimeline.Num()) pastMoveInput = PrevTimeline[CurrentTimeline.Num()].States[i].Move;;
-		PastEntities[i]->AttemptMove(pastMoveInput, Grid, s);
+		if (PastEntities[i]->AttemptMove(pastMoveInput, Grid, s)) n++;
 		Turn.States[i] = s;
 	}
 	
@@ -244,7 +249,8 @@ void UGameManager::ProcessTurn(EInputStates Input)
 
 	//Dispatch animations
 	UE_LOG(LogTemp, Error, TEXT("Starting Turn with %s"), *EnumConvertTemp(PlayerController->NewestInput));
-	bTurn = true;
+	//bTurn = true;
+	NumEntitiesAnimating = n + 1;
 	Buffer = NONE;
 
 
@@ -282,7 +288,7 @@ void APlayerEntity::Tick(float DeltaTime)
 	{
 		Animator->UpdateAnimation();
 		
-		if (bIsActivePlayer && !Animator->IsAnimating())
+		if (/*bIsActivePlayer && */!Animator->IsAnimating())
 		{
 			OnMoveFinished.Execute();
 			//RefreshLocation();

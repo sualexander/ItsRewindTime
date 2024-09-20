@@ -73,7 +73,8 @@ public:
 
 	void BuildLevel();
 
-	bool bTurn = false;
+	//bool bTurn = false;
+	int NumEntitiesAnimating = 0;
 
 	bool bRewindQueued = false;
 
