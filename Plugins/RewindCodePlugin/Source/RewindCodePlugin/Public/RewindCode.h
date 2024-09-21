@@ -11,26 +11,6 @@
 
 enum EInputStates;
 
-//TArray<FLinearColor> COLORS = 
-//{
-//	FLinearColor(0.f, 0.f, 1.f),
-//	FLinearColor(0.f, 1.f, 0.f),
-//	FLinearColor(1.f, 0.f, 0.f),
-//	FLinearColor(1.f, 0.f, 1.f),
-//	FLinearColor(0.f, 1.f, 1.f),
-//	FLinearColor(1.f, 1.f, 0.f)
-//};
-
-struct EntityState
-{
-	FIntVector Move, GridPosition;
-};
-
-struct Turn
-{
-	TArray<EntityState> States;
-};
-
 UCLASS()
 class REWINDCODEPLUGIN_API ARewindGameMode : public AGameModeBase
 {
@@ -76,7 +56,7 @@ public:
 	UMaterialInstanceDynamic* PlayerMI;
 
 	APlayerEntity* Player;
-	TArray<APlayerEntity*> AllPlayers;
+	TArray<APlayerEntity*> PastPlayers;
 
 	TArray<Turn> Turns;
 	int32 TurnCounter = 0;
@@ -94,6 +74,7 @@ public:
 		return Location.X + (Location.Y * WIDTH) + (Location.Z * WIDTH * LENGTH);
 	}
 
+	bool MoveEntity(AEntity* Entity, const FIntVector& Move);
 	void UpdateEntityPosition(AEntity* Entity, const FIntVector& Delta);
 };
 
@@ -128,7 +109,18 @@ public:
 
 //------------------------------------------------
 
-struct EntityPath
+struct EntityState
+{
+	FIntVector Move;
+	TArray<FIntVector> Path; //In grid positions
+};
+
+struct Turn
+{
+	TMap<AEntity*, EntityState> EntityStates;
+};
+
+struct EntityPath //EntityAnimationPath
 {
 	EntityPath(AEntity* Entity, TArray<FIntVector>& Path);
 

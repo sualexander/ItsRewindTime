@@ -191,22 +191,36 @@ void UGameManager::ProcessTurn(EInputStates Input)
 			break;
 	}
 
-	AEntity* DestinationTile = Grid[Flatten(Player->GridPosition + MoveInput)];
-	if (DestinationTile && !(DestinationTile->Flags & (MOVEABLE | REWIND))) return;
+	//Evaluate current player
+	if (!MoveEntity(Player, MoveInput)) return; //Don't advance turn if not a successful movement
 
-	Turn Turn;
-	Turn.States.SetNum(AllPlayers.Num() + 1);
+	bool bNewTurn = false;
+	Turn* CurrentTurn = nullptr;
+	if (++TurnCounter >= Turns.Num()) {
+		Turn& NewTurn = Turns.Emplace_GetRef(); //Turns array owns each turn object
+		NewTurn.EntityStates.Reserve(PastPlayers.Num() + 1);
+		CurrentTurn = &NewTurn;
+		bNewTurn = true;
+	} else {
+		CurrentTurn = &Turns[TurnCounter];
+	}
 
-	EntityState State;
-	State.Move = MoveInput;
-	Turn.States[AllPlayers.Num()] = State;
+	CurrentTurn->EntityStates[Player].Move = MoveInput; //Record state for current player
 
-	//Iterate through past players
+	if (bNewTurn) {
+
+	} else {
+	
+	}
+
+	//Evaluate past players
 	TArray<EntityPath> Paths;
-	Paths.Reserve(AllPlayers.Num());
+	Paths.Reserve(PastPlayers.Num());
 
-	for (int32 PlayerIndex = AllPlayers.Num() - 1; PlayerIndex >= 0; --PlayerIndex)
+	for (int32 PlayerIndex = PastPlayers.Num() - 1; PlayerIndex >= 0; --PlayerIndex)
 	{
+		if (TurnCounter < Turns.Num()) continue;
+
 		FIntVector CurrentMove = TurnCounter < Turns.Num() ? Turns[TurnCounter].States[PlayerIndex].Move : MoveInput;
 
 		AEntity* CurrentPlayer = AllPlayers[PlayerIndex];
@@ -223,11 +237,53 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	}
 	
 	Turns.Add(Turn);
-	++TurnCounter;
+	
 
 	//Dispatch animations
 	Buffer = NONE;
 	Animator->Start(Paths);
+}
+
+//TODO: Remember to hardcode grid math
+//TODO: Bounds checks + gravity infinite loop
+bool UGameManager::MoveEntity(AEntity* BaseEntity, const FIntVector& Delta)
+{
+	//Query in direction of movement until wall or air
+	TArray<AEntity*> Connected;
+	Connected.Emplace(BaseEntity);
+
+	FIntVector GridPosition = BaseEntity->GridPosition;
+	for (;;) 
+	{
+		AEntity* Entity = Grid[Flatten(GridPosition += Delta)];
+		if (!Entity) break;
+		else if (!(Entity->Flags & MOVEABLE)) return false;
+
+		Connected.Emplace(Entity);
+	}
+
+	//Update from farthest to self
+	for (int32 i = Connected.Num() - 1; i >= 0; --i)
+	{
+		//Update from bottom up, and evaluate horizontal movement before gravity
+		UpdateEntityPosition(Connected[i], Delta);
+		while (!Grid[Flatten(Connected[i]->GridPosition + FIntVector(0, 0, -1))])
+		{
+			UpdateEntityPosition(Connected[i], FIntVector(0, 0, -1));
+		}
+
+		for (;;)
+		{
+			AEntity* Entity = Grid[Flatten(Connected[i]->GridPosition + FIntVector(0, 0, 1))];
+			if (!Entity || !(Entity->Flags & MOVEABLE)) break;
+
+			UpdateEntityPosition(Entity, Delta);
+			while (!Grid[Flatten(Entity->GridPosition + FIntVector(0, 0, -1))])
+			{
+				UpdateEntityPosition(Entity, FIntVector(0, 0, -1));
+			}
+		}
+	}
 }
 
 void UGameManager::UpdateEntityPosition(AEntity* Entity, const FIntVector& Delta)
@@ -235,6 +291,8 @@ void UGameManager::UpdateEntityPosition(AEntity* Entity, const FIntVector& Delta
 	Grid[Flatten(Entity->GridPosition)] = nullptr;
 	Grid[Flatten(Entity->GridPosition + Delta)] = Entity;
 	Entity->GridPosition = Entity->GridPosition + Delta;
+
+	Turns[TurnCounter].EntityStates[Entity].Path.Emplace(Entity->GridPosition);
 }
 
 //------------------------------------------------------------------
