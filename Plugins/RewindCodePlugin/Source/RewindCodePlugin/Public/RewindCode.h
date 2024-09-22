@@ -120,12 +120,14 @@ struct Turn
 	TMap<AEntity*, EntityState> EntityStates;
 };
 
-struct EntityPath //EntityAnimationPath
+struct EntityAnimationPath
 {
-	EntityPath(AEntity* Entity, TArray<FIntVector>& Path);
+	EntityAnimationPath(AEntity* Entity, TArray<FIntVector>& Path);
 
 	AEntity* Entity;
 	TArray<FIntVector> Path;
+	TArray<uint8> PathIndices; 
+
 	int32 PathIndex = 0;
 	double StartTime = 0;
 };
@@ -144,13 +146,13 @@ public:
 		RETURN_QUICK_DECLARE_CYCLE_STAT(UEntityAnimator, STATGROUP_Tickables); 
 	}
 
-	void Start(TArray<EntityPath>& Paths);
+	void Start();
 	UWorld* WorldContext;
 
 	DECLARE_DELEGATE(FOnAnimationsFinished)
 	FOnAnimationsFinished OnAnimationsFinished;
 
-	TArray<TArray<EntityPath>> Queue;
+	TArray<EntityAnimationPath> Paths;
 	int32 QueueIndex = 0;
 
 	float StartTime;

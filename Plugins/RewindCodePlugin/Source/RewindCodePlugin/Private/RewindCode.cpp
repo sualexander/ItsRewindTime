@@ -205,43 +205,28 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		CurrentTurn = &Turns[TurnCounter];
 	}
 
-	CurrentTurn->EntityStates[Player].Move = MoveInput; //Record state for current player
-
-	if (bNewTurn) {
-
-	} else {
-	
-	}
+	CurrentTurn->EntityStates[Player].Move = MoveInput; //Record input state for current player
 
 	//Evaluate past players
-	TArray<EntityPath> Paths;
-	Paths.Reserve(PastPlayers.Num());
-
-	for (int32 PlayerIndex = PastPlayers.Num() - 1; PlayerIndex >= 0; --PlayerIndex)
-	{
-		if (TurnCounter < Turns.Num()) continue;
-
-		FIntVector CurrentMove = TurnCounter < Turns.Num() ? Turns[TurnCounter].States[PlayerIndex].Move : MoveInput;
-
-		AEntity* CurrentPlayer = AllPlayers[PlayerIndex];
-
-		//check moveable entity above "riding"
-		UpdateEntityPosition(CurrentPlayer, CurrentMove);
-
-		while (!Grid[Flatten(CurrentPlayer->GridPosition + FIntVector(0, 0, -1))])
+	if (!bNewTurn) {
+		for (int32 i = PastPlayers.Num() - 1; i >= 0; --i)
 		{
-			UpdateEntityPosition(CurrentPlayer, FIntVector(0, 0, -1));
+			MoveEntity(PastPlayers[i], Turns[TurnCounter].EntityStates[PastPlayers[i]].Move);
 		}
-
-		Turn.States[PlayerIndex].GridPosition = CurrentPlayer->GridPosition - Turn.States[PlayerIndex].GridPosition;
 	}
-	
-	Turns.Add(Turn);
-	
 
 	//Dispatch animations
+	Animator->Paths.Reset();
+	Animator->Paths.Reserve(Turns[TurnCounter].EntityStates.Num());
+	for (auto& Pair : Turns[TurnCounter].EntityStates)
+	{
+		Animator->Paths.Emplace(EntityAnimationPath(Pair.Key, Pair.Value.Path));
+	}
+	Animator->Paths.Shrink();
+
+	Animator->Start();
+
 	Buffer = NONE;
-	Animator->Start(Paths);
 }
 
 //TODO: Remember to hardcode grid math
@@ -309,7 +294,7 @@ void APlayerEntity::Init(FIntVector Loc)
 
 //-----------------------------------------------------------------------------
 
-EntityPath::EntityPath(AEntity* Entity, TArray<FIntVector>& InPath) : Entity(Entity)
+EntityAnimationPath::EntityAnimationPath(AEntity* Entity, TArray<FIntVector>& InPath) : Entity(Entity)
 {
 	Path.Reserve(InPath.Num());
 
@@ -319,12 +304,15 @@ EntityPath::EntityPath(AEntity* Entity, TArray<FIntVector>& InPath) : Entity(Ent
 	}
 }
 
-void UEntityAnimator::Start(TArray<EntityPath>& Paths)
+void UEntityAnimator::Start()
 {
-	Queue.Empty();
-	//group paths
+	//Group "sub-turns" if all entities' paths in adjacent turns are non-intersecting
+	int32 Index = 0;
+	for (;;)
+	{
 
-	Queue.Emplace(Paths);
+	}
+
 	bIsAnimating = true;
 }
 
