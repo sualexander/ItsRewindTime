@@ -339,24 +339,20 @@ void UEntityAnimator::Tick(float DeltaTime)
 	int32 EndIndex = QueueIndex < QueueIndices.Num() - 1 ? QueueIndices[QueueIndex] : Queue.Num();
 	for (int32 i = QueueIndices[QueueIndex]; i < EndIndex; ++i)
 	{
-		EntityAnimationPath& Animation = Queue[i];
-		if (Animation.PathIndex != -1) {
-			if (Animation.PathIndex == 0) StartTime = CurrentTime;
+		if (Queue[i].PathIndex != -1) {
+			bNextGroup = false;
+		} else {
+			float MoveTime = (Queue[i].Path[Queue[i].PathIndex + 1] - Queue[i].Path[Queue[i].PathIndex]).Z < 0 ? VerticalSpeed : HorizontalSpeed;
+			float Alpha = FMath::Clamp((CurrentTime - Queue[i].StartTime) / MoveTime, 0, 1);
+			Queue[i].Entity->SetActorLocation(FMath::Lerp(FVector(Queue[i].Path[Queue[i].PathIndex]), FVector(Queue[i].Path[Queue[i].PathIndex + 1]), Alpha));
 
-			//float MoveTime = (Animation.Path[Animation.PathIndex + 1 == Animation.Path.Num() ? Animation.Path.Num() - 1 : Animation.PathIndex + 1] - 
-			//	Animation.Path[Animation.PathIndex]).Z < 0 ? VerticalSpeed : HorizontalSpeed;
-			float MoveTime = 2;
-			float Alpha = FMath::Clamp((CurrentTime - Animation.StartTime) / MoveTime, 0, 1);
-			Animation.Entity->SetActorLocation(FMath::Lerp(Animation.Path[Animation.PathIndex], Animation.Path[Animation.PathIndex + 1], Alpha));
-
-			if (FMath::IsNearlyEqual(CurrentTime - Animation.StartTime, MoveTime)) {
-				Animation.PathIndex = Animation.PathIndex + 1 == Animation.Path.Num() - 1 ? -1 : ++Animation.PathIndex;
+			if (FMath::IsNearlyEqual(CurrentTime - Queue[i].StartTime, MoveTime)) {
+				Queue[i].StartTime = 0;
+				Queue[i].PathIndex = Queue[i].PathIndex + 1 == Queue[i].Path.Num() - 1 ? -1 : ++Queue[i].PathIndex;
 			}
 			else {
-				Animation.StartTime = CurrentTime;
+				Queue[i].StartTime = CurrentTime;
 			}
-
-			bNextGroup = false;
 		}
 	}
 

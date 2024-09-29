@@ -134,7 +134,7 @@ struct EntityAnimationPath
 	EntityAnimationPath(AEntity* Entity) : Entity(Entity) {}
 
 	AEntity* Entity;
-	TArray<FVector> Path;
+	TArray<FIntVector> Path;
 
 	int32 PathIndex = 0;
 	double StartTime = 0;
