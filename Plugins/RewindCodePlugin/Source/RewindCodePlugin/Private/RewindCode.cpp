@@ -5,6 +5,17 @@
 
 #include "Kismet/GameplayStatics.h"
 
+#if 1
+#define SLOG(x) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Yellow, x);
+#define SLOGF(x) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(x));
+#define POINT(x, c) DrawDebugPoint(GetWorld(), x, 10, c, false, 2.f);
+#define LINE(x1, x2, c) DrawDebugPoint(GetWorld(), x1, x2, 10, c, false, 2.f);
+#else
+#define SLOG(x)
+#define SLOGF(x)
+#define POINT(x, c)
+#define LINE(x1, x2, c)
+#endif
 
 ARewindGameMode::ARewindGameMode()
 {
@@ -44,7 +55,7 @@ UGameManager::UGameManager()
 	StartGridPosition = FIntVector(0, 0, 3);
 
 	Grid.Init(nullptr, WIDTH * LENGTH * HEIGHT);
-	for (int32 Y = 0; Y < LENGTH; ++Y) 
+	for (int32 Y = 0; Y < LENGTH; ++Y)
 	{
 		for (int32 X = 0; X < WIDTH; ++X)
 		{
@@ -63,9 +74,9 @@ UGameManager::UGameManager()
 		}
 	}
 
-	for (int32 Y = 0; Y < 4; ++Y) 
+	for (int32 Y = 0; Y < 4; ++Y)
 	{
-		for (int32 X = 0; X < 3; ++X) 
+		for (int32 X = 0; X < 3; ++X)
 		{
 			for (int32 Z = 1; Z < 3; Z++)
 			{
@@ -86,6 +97,7 @@ UGameManager::UGameManager()
 	}
 
 	Player = WorldContext->SpawnActor<APlayerEntity>(FVector(0, 0, BLOCK_SIZE * 3), FRotator::ZeroRotator);
+	Player->SetMobility(EComponentMobility::Movable);
 	Player->GridPosition = FIntVector(0, 0, 3);
 	Grid[Flatten(Player->GridPosition)] = Player;
 
@@ -132,7 +144,8 @@ void UGameManager::OnTurnEnd()
 		if (Buffer != NONE && (Elapsed >= 0 && Elapsed < 0.1f)) {
 			ProcessTurn(Buffer);
 		}
-	} else {
+	}
+	else {
 		ProcessTurn(NONE);
 	}
 }
@@ -171,6 +184,10 @@ void UGameManager::DoRewind()
 
 void UGameManager::ProcessTurn(EInputStates Input)
 {
+
+	//Can't Move during animation
+	if (Animator->bIsAnimating) return;
+
 	//ResolveMoment
 
 	//Check rewind tile
@@ -178,18 +195,18 @@ void UGameManager::ProcessTurn(EInputStates Input)
 
 	FIntVector MoveInput(0, 0, 0);
 	switch (Input == NONE ? PlayerController->NewestInput : Input) {
-		case W:
-			MoveInput.Y = 1;
-			break;
-		case S:
-			MoveInput.Y = -1;
-			break;
-		case A:
-			MoveInput.X = 1;
-			break;
-		case D:
-			MoveInput.X = -1;
-			break;
+	case W:
+		MoveInput.Y = 1;
+		break;
+	case S:
+		MoveInput.Y = -1;
+		break;
+	case A:
+		MoveInput.X = 1;
+		break;
+	case D:
+		MoveInput.X = -1;
+		break;
 	}
 
 	//Check if input results in a successful movement, otherwise don't advance turn
@@ -197,7 +214,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	for (;;)
 	{
 		AEntity* Entity = Grid[Flatten(GridPosition += MoveInput)];
-		if (!Entity) break; 
+		if (!Entity) break;
 		if (!(Entity->Flags & MOVEABLE)) return;
 	}
 
@@ -206,7 +223,8 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		Turn& NewTurn = Turns.Emplace_GetRef();
 		NewTurn.SubTurns.Reserve(PastPlayers.Num() + 1);
 		CurrentTurn = &NewTurn;
-	} else {
+	}
+	else {
 		CurrentTurn = &Turns[TurnCounter];
 	}
 
@@ -233,7 +251,7 @@ void UGameManager::MoveEntity(SubTurn& SubTurn)
 	Connected.Emplace(SubTurn.Player);
 
 	FIntVector GridPosition = SubTurn.Player->GridPosition;
-	for (;;) 
+	for (;;)
 	{
 		AEntity* Entity = Grid[Flatten(GridPosition += SubTurn.Move)];
 		if (!Entity) break;
@@ -268,6 +286,12 @@ void UGameManager::MoveEntity(SubTurn& SubTurn)
 
 void UGameManager::UpdateEntityPosition(SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta)
 {
+
+	//if (!SubTurn.Entities.Contains(Entity))
+	//{
+	//	SubTurn.AllPaths.Emplace(Entity->GridPosition);
+	//}
+
 	Grid[Flatten(Entity->GridPosition)] = nullptr;
 	Grid[Flatten(Entity->GridPosition + Delta)] = Entity;
 	Entity->GridPosition = Entity->GridPosition + Delta;
@@ -301,14 +325,19 @@ void UEntityAnimator::Start(const Turn& Turn)
 	Queue.Reset();
 	QueueIndices.Reset();
 	QueueIndex = 0;
+	double CurrentTime = WorldContext->TimeSeconds;
 
 	for (int32 SubTurnIndex = Turn.SubTurns.Num() - 1; SubTurnIndex >= 0; --SubTurnIndex)
 	{
 		const SubTurn& SubTurn = Turn.SubTurns[SubTurnIndex];
 		int32 EntityIndex = 0;
-		for (;EntityIndex < SubTurn.Entities.Num(); ++EntityIndex)
+		for (; EntityIndex < SubTurn.Entities.Num(); ++EntityIndex)
 		{
 			EntityAnimationPath& Path = Queue.Emplace_GetRef(EntityAnimationPath(SubTurn.Entities[EntityIndex]));
+
+			Path.Path.Emplace(SubTurn.Entities[EntityIndex]->GetActorLocation());
+
+			Path.StartTime = CurrentTime;
 
 			int32 EndIndex = EntityIndex < SubTurn.PathIndices.Num() - 1 ? SubTurn.PathIndices[EntityIndex + 1] : SubTurn.AllPaths.Num();
 			for (int32 PathIndex = SubTurn.PathIndices[EntityIndex]; PathIndex < EndIndex; ++PathIndex)
@@ -321,9 +350,11 @@ void UEntityAnimator::Start(const Turn& Turn)
 		UE_LOG(LogTemp, Warning, TEXT("Add Animation Path"));
 	}
 
+
+
 	//Group adjacent "subturns" if all entities' paths are non-intersecting
 	int32 Index = 0;
-	for (;false;)
+	for (; false;)
 	{
 
 	}
@@ -333,27 +364,30 @@ void UEntityAnimator::Start(const Turn& Turn)
 
 void UEntityAnimator::Tick(float DeltaTime)
 {
+
 	bool bNextGroup = true;
 	double CurrentTime = WorldContext->TimeSeconds;
 
+	int32 StartIndex = QueueIndex > 0 ? QueueIndices[QueueIndex - 1] : 0;
 	int32 EndIndex = QueueIndex < QueueIndices.Num() - 1 ? QueueIndices[QueueIndex] : Queue.Num();
-	for (int32 i = QueueIndices[QueueIndex]; i < EndIndex; ++i)
+	for (int32 i = StartIndex; i < EndIndex; ++i)
 	{
+
 		EntityAnimationPath& Animation = Queue[i];
 		if (Animation.PathIndex != -1) {
-			if (Animation.PathIndex == 0) StartTime = CurrentTime;
 
 			//float MoveTime = (Animation.Path[Animation.PathIndex + 1 == Animation.Path.Num() ? Animation.Path.Num() - 1 : Animation.PathIndex + 1] - 
 			//	Animation.Path[Animation.PathIndex]).Z < 0 ? VerticalSpeed : HorizontalSpeed;
-			float MoveTime = 2;
+			float MoveTime = 1;
 			float Alpha = FMath::Clamp((CurrentTime - Animation.StartTime) / MoveTime, 0, 1);
 			Animation.Entity->SetActorLocation(FMath::Lerp(Animation.Path[Animation.PathIndex], Animation.Path[Animation.PathIndex + 1], Alpha));
 
-			if (FMath::IsNearlyEqual(CurrentTime - Animation.StartTime, MoveTime)) {
-				Animation.PathIndex = Animation.PathIndex + 1 == Animation.Path.Num() - 1 ? -1 : ++Animation.PathIndex;
+			if (CurrentTime - Animation.StartTime >= MoveTime) {
+				Animation.PathIndex = Animation.PathIndex + 1 >= Animation.Path.Num() - 1 ? -1 : ++Animation.PathIndex;
+				Animation.StartTime = CurrentTime;
 			}
 			else {
-				Animation.StartTime = CurrentTime;
+				//Animation.StartTime = CurrentTime;
 			}
 
 			bNextGroup = false;

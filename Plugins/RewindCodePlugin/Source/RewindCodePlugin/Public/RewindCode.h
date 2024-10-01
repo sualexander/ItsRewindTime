@@ -60,12 +60,12 @@ public:
 
 	TArray<struct Turn> Turns;
 	int32 TurnCounter = 0;
-	
+
 	TArray<AEntity*> Grid;
 	int32 BLOCK_SIZE = 300;
 	int32 WIDTH = 10, LENGTH = 10, HEIGHT = 5;
 
-	int32 Flatten(int32 X, int32 Y, int32 Z) 
+	int32 Flatten(int32 X, int32 Y, int32 Z)
 	{
 		return X + (Y * WIDTH) + (Z * WIDTH * LENGTH);
 	}
@@ -149,9 +149,9 @@ public:
 	void Tick(float DeltaTime) override;
 	bool IsTickable() const override { return bIsAnimating; }
 	bool bIsAnimating = false;
-	TStatId GetStatId() const override 
-	{ 
-		RETURN_QUICK_DECLARE_CYCLE_STAT(UEntityAnimator, STATGROUP_Tickables); 
+	TStatId GetStatId() const override
+	{
+		RETURN_QUICK_DECLARE_CYCLE_STAT(UEntityAnimator, STATGROUP_Tickables);
 	}
 
 	void Start(const struct Turn& Turn);
