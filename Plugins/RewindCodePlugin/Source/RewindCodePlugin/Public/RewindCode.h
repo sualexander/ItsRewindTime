@@ -147,14 +147,15 @@ struct SubTurn //Timelines
 
 struct EntityAnimationPath
 {
-	EntityAnimationPath(AEntity* Entity) : Entity(Entity) {}
-
 	AEntity* Entity;
 	TArray<FVector> Path;
 
 	int32 PathIndex = -2;
 	double StartTime;
 	FVector StartLocation;
+
+	EntityAnimationPath(AEntity* Entity) : Entity(Entity) {}
+
 };
 
 UCLASS()

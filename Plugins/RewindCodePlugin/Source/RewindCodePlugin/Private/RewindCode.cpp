@@ -174,6 +174,10 @@ void UGameManager::DoRewind()
 {
 	//Do animations
 	//animations should update grid as well
+	for (AEntity* P : AllPlayers)
+	{
+		Grid[Flatten(P->GridPosition)] = nullptr;
+	}
 
 
 	//Start new timeline
@@ -326,6 +330,8 @@ void UGameManager::MoveEntity(SubTurn& SubTurn)
 	for (int32 i = Connected.Num() - 1; i >= 0; --i)
 	{
 		//Update from bottom up, and evaluate horizontal movement before gravity
+		FIntVector Base = Connected[i]->GridPosition;
+
 		bSuperUpdated |= UpdateEntityPosition(SubTurn, Connected[i], SubTurn.Move);
 
 		AEntity* QueryV = Grid[Flatten(Connected[i]->GridPosition + FIntVector(0, 0, -1))];
@@ -337,15 +343,15 @@ void UGameManager::MoveEntity(SubTurn& SubTurn)
 
 		for (;;)
 		{
-			AEntity* QueryH = Grid[Flatten(Connected[i]->GridPosition + FIntVector(0, 0, 1))];
-			if (!QueryH || !(QueryH->Flags & MOVEABLE) || (QueryH->IsA<ASuperposition>())) break;
+			AEntity* QueryH = Grid[Flatten(Base += FIntVector(0, 0, 1))];
+			if (!QueryH || !(QueryH->Flags & MOVEABLE) || (QueryH->IsA<ASuperposition>())) break; //how to deal with superposition???
 
 			bSuperUpdated |= UpdateEntityPosition(SubTurn, QueryH, SubTurn.Move);
 			QueryV = Grid[Flatten(QueryH->GridPosition + FIntVector(0, 0, -1))];
 			while (!QueryV || QueryV->IsA<ASuperposition>())
 			{
 				bSuperUpdated |= UpdateEntityPosition(SubTurn, QueryH, FIntVector(0, 0, -1));
-				Grid[Flatten(QueryH->GridPosition + FIntVector(0, 0, -1))];
+				QueryV = Grid[Flatten(QueryH->GridPosition + FIntVector(0, 0, -1))];
 			}
 		}
 	}
