@@ -56,7 +56,8 @@ public:
 	UMaterialInstanceDynamic* PlayerMI;
 
 	APlayerEntity* Player;
-	TArray<APlayerEntity*> PastPlayers;
+	TArray<APlayerEntity*> AllPlayers;
+	ASuperposition* Superposition;
 
 	TArray<struct Turn> Turns;
 	int32 TurnCounter = 0;
@@ -75,7 +76,7 @@ public:
 	}
 
 	void MoveEntity(struct SubTurn& SubTurn);
-	void UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta);
+	bool UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta);
 };
 
 //move base entity stuff into seperate file
@@ -83,7 +84,8 @@ enum EntityFlags : uint32
 {
 	PLAYER = 1U,
 	MOVEABLE = 2U,
-	REWIND = 4U
+	REWIND = 4U,
+	SUPER = 8U
 };
 
 UCLASS()
@@ -105,6 +107,18 @@ public:
 	APlayerEntity();
 
 	void Init(FIntVector Loc);
+};
+
+UCLASS(Blueprintable)
+class REWINDCODEPLUGIN_API ASuperposition : public AEntity
+{
+	GENERATED_BODY()
+
+public:
+	bool bUpdated = false;
+
+	TArray<APlayerEntity*> Players;
+
 };
 
 //------------------------------------------------
@@ -136,8 +150,9 @@ struct EntityAnimationPath
 	AEntity* Entity;
 	TArray<FVector> Path;
 
-	int32 PathIndex = 0;
-	double StartTime = 0;
+	int32 PathIndex = -2;
+	double StartTime;
+	FVector StartLocation;
 };
 
 UCLASS()
@@ -164,8 +179,7 @@ public:
 	TArray<uint8> QueueIndices;
 	int32 QueueIndex;
 
-	float StartTime;
-	float HorizontalSpeed = 2, VerticalSpeed = 1;
+	float HorizontalSpeed = 0.25, VerticalSpeed = 0.15;
 
 	/*UPROPERTY(EditDefaultsOnly, Category = "Animation", BlueprintReadWrite)
 	FVectorCurve MoveLocationCurve;*/
