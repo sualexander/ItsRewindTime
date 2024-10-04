@@ -55,6 +55,9 @@ public:
 	DECLARE_DELEGATE(FOnInputChanged)
 	FOnInputChanged OnInputChanged;
 
+	DECLARE_DELEGATE(FOnPassPressed)
+	FOnPassPressed OnPassPressed;
+
 
 	void OnPassTurn(const FInputActionValue& Value);
 

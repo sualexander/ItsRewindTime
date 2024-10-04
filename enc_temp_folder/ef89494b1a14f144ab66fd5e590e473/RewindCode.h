@@ -86,8 +86,7 @@ enum EntityFlags : uint32
 	PLAYER = 1U,
 	MOVEABLE = 2U,
 	REWIND = 4U,
-	SUPER = 8U,
-	CURRENT_PLAYER = 16U
+	SUPER = 8U
 };
 
 UCLASS()

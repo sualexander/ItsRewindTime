@@ -175,7 +175,7 @@ void UGameManager::DoRewind()
 	//Do animations
 	//animations should update grid as well
 
-
+	
 	//Start new timeline
 	bRewindQueued = false;
 	TurnCounter = 0;
@@ -378,7 +378,7 @@ bool UGameManager::UpdateEntityPosition(SubTurn& SubTurn, AEntity* Entity, const
 		Entity->GridPosition = Entity->GridPosition + Delta;
 
 		AEntity* Query = Grid[Flatten(Entity->GridPosition + FIntVector(0, 0, -1))];
-		if (Query && (Query->Flags & REWIND)) {
+		if (Query && (Query->Flags & REWIND) && (Entity->Flags & PLAYER)) {
 			QueueRewind();
 		}
 
