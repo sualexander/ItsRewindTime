@@ -451,6 +451,7 @@ void UEntityAnimator::Start(const Turn& Turn)
 
 void UEntityAnimator::Tick(float DeltaTime)
 {
+
 	bool bNextGroup = true;
 	double CurrentTime = WorldContext->TimeSeconds;
 
@@ -468,7 +469,7 @@ void UEntityAnimator::Tick(float DeltaTime)
 			Animation.StartLocation = Animation.Entity->GetActorLocation();
 		}
 
-		float MoveTime = (Animation.Path[Animation.PathIndex] - Animation.StartLocation).Z < 0 ? VerticalSpeed : HorizontalSpeed; //should be saved in animation struct
+		float MoveTime = (Animation.Path[Animation.PathIndex] - Animation.StartLocation).Z < 0 ? VerticalSpeed : HorizontalSpeed;
 		float Alpha = FMath::Clamp((CurrentTime - Animation.StartTime) / MoveTime, 0, 1);
 		Animation.Entity->SetActorLocation(FMath::Lerp(Animation.StartLocation, Animation.Path[Animation.PathIndex], Alpha));
 

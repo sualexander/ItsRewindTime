@@ -140,6 +140,8 @@ struct SubTurn //Timelines
 	TArray<FIntVector> AllPaths;
 	//TArray<void*> Other;
 
+	bool bSuperCollapse = false;
+
 	SubTurn(AEntity* Player, FIntVector& Move) : Player(Player), Move(Move) {}
 };
 
