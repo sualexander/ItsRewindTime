@@ -37,12 +37,13 @@ public:
 
 	UWorld* WorldContext;
 	class ARewindPlayerController* PlayerController;
+
+	UPROPERTY()
 	UEntityAnimator* Animator;
 
 	FIntVector StartGridPosition;
 
 	void HandleInput();
-
 	void ProcessTurn(EInputStates Input);
 	void OnTurnEnd();
 
@@ -73,11 +74,26 @@ public:
 	}
 	int32 Flatten(const FIntVector& Location)
 	{
-		return Location.X + (Location.Y * WIDTH) + (Location.Z * WIDTH * LENGTH);
+
+		int ret = Location.X + (Location.Y * WIDTH) + (Location.Z * WIDTH * LENGTH);
+
+		if (ret < 0 || ret > LENGTH * WIDTH * HEIGHT) {
+			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(ret));
+			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(Location.Z));
+			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(Location.Y));
+			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(Location.X));
+			return 0;
+		}
+
+		return ret;
 	}
+
+	AEntity* QueryAt(const FIntVector& Location);
 
 	void MoveEntity(struct SubTurn& SubTurn);
 	bool UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta);
+
+	void LoadGridFromFile();
 };
 
 //move base entity stuff into seperate file
@@ -87,7 +103,8 @@ enum EntityFlags : uint32
 	MOVEABLE = 2U,
 	REWIND = 4U,
 	SUPER = 8U,
-	CURRENT_PLAYER = 16U
+	CURRENT_PLAYER = 16U,
+	GOAL = 32U
 };
 
 UCLASS()
@@ -149,14 +166,15 @@ struct SubTurn //Timelines
 
 struct EntityAnimationPath
 {
-	EntityAnimationPath(AEntity* Entity) : Entity(Entity) {}
-
 	AEntity* Entity;
 	TArray<FVector> Path;
 
 	int32 PathIndex = -2;
 	double StartTime;
 	FVector StartLocation;
+
+	EntityAnimationPath(AEntity* Entity) : Entity(Entity) {}
+
 };
 
 UCLASS()

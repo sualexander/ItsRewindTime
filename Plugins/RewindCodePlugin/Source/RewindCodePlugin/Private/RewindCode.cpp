@@ -51,11 +51,12 @@ UGameManager::UGameManager()
 	UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/EngineMeshes/Cube.Cube"));
 	UMaterial* RewindTileMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/RewindTileMaterial"));
 	UMaterial* StartTileMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/StartTileMaterial"));
+	UMaterial* EndTileMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/EndTileMaterial"));
 
-	StartGridPosition = FIntVector(0, 0, 3);
+	StartGridPosition = FIntVector(0, 0, 0);
 
-	Grid.Init(nullptr, WIDTH * LENGTH * HEIGHT);
-	for (int32 Y = 0; Y < LENGTH; ++Y)
+	/*Grid.Init(nullptr, WIDTH * LENGTH * HEIGHT);*/
+	/*for (int32 Y = 0; Y < LENGTH; ++Y)
 	{
 		for (int32 X = 0; X < WIDTH; ++X)
 		{
@@ -94,12 +95,62 @@ UGameManager::UGameManager()
 				}
 			}
 		}
+	}*/
+
+	/*for (int32 Y = 0; Y < 1; ++Y)
+	{
+		for (int32 X = 0; X < 5; ++X)
+		{
+			for (int32 Z = 1; Z < 3; Z++)
+			{
+				if (X == 2 && Z == 2) continue;
+
+				FIntVector IntLocation(X, Y, Z);
+				FVector Location(X * BLOCK_SIZE, Y * BLOCK_SIZE, Z * BLOCK_SIZE);
+				AEntity* Entity = WorldContext->SpawnActor<AEntity>(Location, FRotator::ZeroRotator);
+				Entity->GridPosition = FIntVector(X, Y, Z);
+				Entity->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+				Entity->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
+
+				Grid[Flatten(Entity->GridPosition)] = Entity;
+
+				if (X == StartGridPosition.X && Y == StartGridPosition.Y && Z == StartGridPosition.Z - 1) {
+					Entity->GetStaticMeshComponent()->SetMaterial(0, StartTileMaterial);
+				}
+				if (X == 4 && Z == 2) {
+					Entity->GetStaticMeshComponent()->SetMaterial(0, EndTileMaterial);
+				}
+				if (X == 2 && Z == 1) {
+					Entity->Flags |= REWIND;
+					Entity->GetStaticMeshComponent()->SetMaterial(0, RewindTileMaterial);
+				}
+			}
+		}
 	}
+
+	int X = 0;
+	int Y = 1;
+	int Z = 2;
+
+	FIntVector IntLocation(X, Y, Z);
+	FVector Location(X * BLOCK_SIZE, Y * BLOCK_SIZE, Z * BLOCK_SIZE);
+	AEntity* Entity = WorldContext->SpawnActor<AEntity>(Location, FRotator::ZeroRotator);
+	Entity->GridPosition = FIntVector(X, Y, Z);
+	Entity->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+	Entity->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
+
+	Grid[Flatten(Entity->GridPosition)] = Entity;*/
+	
+
+	LoadGridFromFile();
+
 
 	Player = WorldContext->SpawnActor<APlayerEntity>(FVector(0, 0, BLOCK_SIZE * 3), FRotator::ZeroRotator);
 	Player->SetMobility(EComponentMobility::Movable);
-	Player->GridPosition = FIntVector(0, 0, 3);
+	Player->GridPosition = StartGridPosition;
 	Grid[Flatten(Player->GridPosition)] = Player;
+
+	Player->Flags |= CURRENT_PLAYER;
 
 	Player->Init(StartGridPosition);
 
@@ -111,10 +162,10 @@ UGameManager::UGameManager()
 
 	AllPlayers.Emplace(Player);
 
-	Superposition = WorldContext->SpawnActor<ASuperposition>(FVector(0, 0, BLOCK_SIZE * 3), FRotator::ZeroRotator);
+	Superposition = WorldContext->SpawnActor<ASuperposition>(FVector(BLOCK_SIZE * StartGridPosition.X, BLOCK_SIZE * StartGridPosition.Y, BLOCK_SIZE * StartGridPosition.Z), FRotator::ZeroRotator);
 	Superposition->SetMobility(EComponentMobility::Movable);
 	Superposition->SetActorHiddenInGame(true);
-	Superposition->GridPosition = FIntVector(0, 0, 3);
+	Superposition->GridPosition = StartGridPosition;
 	Superposition->Flags |= SUPER;
 
 	Superposition->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Meshes/RewindCube")));
@@ -174,15 +225,22 @@ void UGameManager::DoRewind()
 {
 	//Do animations
 	//animations should update grid as well
+	for (AEntity* P : AllPlayers)
+	{
+		Grid[Flatten(P->GridPosition)] = nullptr;
+	}
 
-	
+
 	//Start new timeline
 	bRewindQueued = false;
 	TurnCounter = 0;
 
-	Player = WorldContext->SpawnActor<APlayerEntity>(FVector(0, 0, BLOCK_SIZE * 3), FRotator::ZeroRotator);
-	Player->GridPosition = FIntVector(0, 0, 3);
+	Player->Flags &= (~CURRENT_PLAYER);
 
+	Player = WorldContext->SpawnActor<APlayerEntity>(FVector(BLOCK_SIZE * StartGridPosition.X, BLOCK_SIZE * StartGridPosition.Y, BLOCK_SIZE * StartGridPosition.Z), FRotator::ZeroRotator);
+	Player->GridPosition = StartGridPosition;
+
+	Player->Flags |= CURRENT_PLAYER;
 	Player->Init(StartGridPosition);
 
 	Player->SetMobility(EComponentMobility::Movable);
@@ -201,7 +259,7 @@ void UGameManager::DoRewind()
 		P->SetActorHiddenInGame(true);
 	}
 
-	Superposition->SetActorLocation(FVector(0, 0, 900));
+	//Superposition->SetActorLocation(FVector(0, 0, 900));
 	Superposition->SetActorHiddenInGame(false);
 	Superposition->bUpdated = false;
 	Superposition->GridPosition = StartGridPosition;
@@ -303,6 +361,15 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	Animator->Start(*CurrentTurn);
 }
 
+AEntity* UGameManager::QueryAt(const FIntVector& Location)
+{
+	if ((Location.X < 0 || Location.X > WIDTH) &&
+		(Location.Y < 0 || Location.Y > LENGTH) &&
+		(Location.Z < 0 || Location.Z > HEIGHT)) return nullptr;
+
+	return Grid[Flatten(Location)];
+}
+
 //TODO: Remember to hardcode grid math
 //TODO: Bounds checks + gravity infinite loop
 void UGameManager::MoveEntity(SubTurn& SubTurn)
@@ -326,9 +393,11 @@ void UGameManager::MoveEntity(SubTurn& SubTurn)
 	for (int32 i = Connected.Num() - 1; i >= 0; --i)
 	{
 		//Update from bottom up, and evaluate horizontal movement before gravity
+		FIntVector Base = Connected[i]->GridPosition;
+
 		bSuperUpdated |= UpdateEntityPosition(SubTurn, Connected[i], SubTurn.Move);
 
-		AEntity* QueryV = Grid[Flatten(Connected[i]->GridPosition + FIntVector(0, 0, -1))];
+		AEntity* QueryV = QueryAt(Connected[i]->GridPosition + FIntVector(0, 0, -1));//Grid[Flatten(Connected[i]->GridPosition + FIntVector(0, 0, -1))];
 		while (!QueryV || QueryV->IsA<ASuperposition>())
 		{
 			bSuperUpdated |= UpdateEntityPosition(SubTurn, Connected[i], FIntVector(0, 0, -1));
@@ -337,15 +406,15 @@ void UGameManager::MoveEntity(SubTurn& SubTurn)
 
 		for (;;)
 		{
-			AEntity* QueryH = Grid[Flatten(Connected[i]->GridPosition + FIntVector(0, 0, 1))];
-			if (!QueryH || !(QueryH->Flags & MOVEABLE) || (QueryH->IsA<ASuperposition>())) break;
+			AEntity* QueryH = QueryAt(Base += FIntVector(0, 0, 1));//Grid[Flatten(Base += FIntVector(0, 0, 1))];
+			if (!QueryH || !(QueryH->Flags & MOVEABLE) || (QueryH->IsA<ASuperposition>())) break; //how to deal with superposition???
 
 			bSuperUpdated |= UpdateEntityPosition(SubTurn, QueryH, SubTurn.Move);
 			QueryV = Grid[Flatten(QueryH->GridPosition + FIntVector(0, 0, -1))];
 			while (!QueryV || QueryV->IsA<ASuperposition>())
 			{
 				bSuperUpdated |= UpdateEntityPosition(SubTurn, QueryH, FIntVector(0, 0, -1));
-				Grid[Flatten(QueryH->GridPosition + FIntVector(0, 0, -1))];
+				QueryV = Grid[Flatten(QueryH->GridPosition + FIntVector(0, 0, -1))];
 			}
 		}
 	}
@@ -372,14 +441,18 @@ bool UGameManager::UpdateEntityPosition(SubTurn& SubTurn, AEntity* Entity, const
 		}
 
 		return true;
-	} else {
+	}
+	else {
 		Grid[Flatten(Entity->GridPosition)] = nullptr;
 		Grid[Flatten(Entity->GridPosition + Delta)] = Entity;
 		Entity->GridPosition = Entity->GridPosition + Delta;
 
 		AEntity* Query = Grid[Flatten(Entity->GridPosition + FIntVector(0, 0, -1))];
-		if (Query && (Query->Flags & REWIND) && (Entity->Flags & PLAYER)) {
+		if (Query && (Query->Flags & REWIND) && (Entity->Flags & CURRENT_PLAYER)) {
 			QueueRewind();
+		}
+		if (Query && (Query->Flags & GOAL)) {
+			SLOG("YOU WIN!")
 		}
 
 		int32 Index = SubTurn.AllPaths.Emplace(Entity->GridPosition);
@@ -391,6 +464,98 @@ bool UGameManager::UpdateEntityPosition(SubTurn& SubTurn, AEntity* Entity, const
 
 		return false;
 	}
+}
+
+void UGameManager::LoadGridFromFile()
+{
+
+	FString FilePath = FPaths::ProjectContentDir() / TEXT("Grids/MainLevelGrid.txt");
+	FString FileContent;
+	if (FFileHelper::LoadFileToString(FileContent, *FilePath))
+	{
+		// File successfully read
+		UE_LOG(LogTemp, Warning, TEXT("File content: %s"), *FileContent);
+		int a = 0;
+		int b = 0;
+		while (FileContent.Mid(b, 1) != ",") b++;
+		int X = FCString::Atoi(*FileContent.Mid(a, b - a));
+		b += 1;
+		a = b;
+		while (FileContent.Mid(b, 1) != ",") b++;
+		int Y = FCString::Atoi(*FileContent.Mid(a, b - a));
+		b += 1;
+		a = b;
+		while (FileContent.Mid(b, 1) != "\n") b++;
+		int Z = FCString::Atoi(*FileContent.Mid(a, b - a));
+
+		WIDTH = X;
+		LENGTH = Y;
+		HEIGHT = Z + 2;
+
+		Grid.Init(nullptr, LENGTH * WIDTH * HEIGHT);
+
+		int i = b + 2;
+
+
+		UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/EngineMeshes/Cube.Cube"));
+		UMaterial* RewindTileMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/RewindTileMaterial"));
+		UMaterial* StartTileMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/StartTileMaterial"));
+		UMaterial* EndTileMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Materials/EndTileMaterial"));
+
+		for (int z = 0; z < HEIGHT - 2; z++) {
+			for (int x = 0; x < WIDTH; x++) {
+				for (int y = 0; y < LENGTH; y++) {
+				
+					//if (FileContent.Mid(i, 1) == " ") i++;
+					//if (FileContent.Mid(i, 1) == "\n") i ++;
+					//if (FileContent.Mid(i, 1) == "\n") i ++;
+
+					while (FileContent.Mid(i, 1) != "0" &&
+							FileContent.Mid(i, 1) != "1" &&
+							FileContent.Mid(i, 1) != "2" &&
+							FileContent.Mid(i, 1) != "3" &&
+							FileContent.Mid(i, 1) != "4") i++;
+
+					FString val = FileContent.Mid(i, 1);
+
+					if (val != "0") {
+
+						FIntVector IntLocation(x, y, z);
+						FVector Location(x * BLOCK_SIZE, y * BLOCK_SIZE, z * BLOCK_SIZE);
+						AEntity* Entity = WorldContext->SpawnActor<AEntity>(Location, FRotator::ZeroRotator);
+						Entity->GridPosition = FIntVector(x, y, z);
+						Entity->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+						Entity->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
+
+						Grid[Flatten(Entity->GridPosition)] = Entity;
+
+						if (val == "2") {
+							Entity->GetStaticMeshComponent()->SetMaterial(0, StartTileMaterial);
+							StartGridPosition = FIntVector(x, y, z + 1);
+						}
+						else if (val == "3") {
+							Entity->GetStaticMeshComponent()->SetMaterial(0, EndTileMaterial);
+							Entity->Flags |= GOAL;
+						}
+						else if (val == "4") {
+							Entity->Flags |= REWIND;
+							Entity->GetStaticMeshComponent()->SetMaterial(0, RewindTileMaterial);
+						}
+					}
+
+					i++;
+
+				}
+			}
+		}
+
+	}
+	else
+	{
+		// Error reading file
+		UE_LOG(LogTemp, Error, TEXT("Failed to read file."));
+	}
+
 }
 
 //------------------------------------------------------------------
@@ -438,7 +603,7 @@ void UEntityAnimator::Start(const Turn& Turn)
 
 	if (QueueIndices.IsEmpty()) return;
 	QueueIndices.Shrink();
-	
+
 	//Group adjacent "subturns" if all entities' paths are non-intersecting
 	int32 Index = 0;
 	for (; false;)
