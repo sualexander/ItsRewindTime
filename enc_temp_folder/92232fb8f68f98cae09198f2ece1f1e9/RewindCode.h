@@ -77,7 +77,7 @@ public:
 
 		int ret = Location.X + (Location.Y * WIDTH) + (Location.Z * WIDTH * LENGTH);
 
-		if (ret < 0 || ret > Grid.Num()) {
+		if (ret < 0 || ret > LENGTH * WIDTH * HEIGHT) {
 			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(ret));
 			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(Location.Z));
 			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(Location.Y));
