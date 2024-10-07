@@ -415,8 +415,11 @@ void UGameManager::MoveEntity(SubTurn& SubTurn)
 
 		for (;;)
 		{
+<<<<<<< HEAD
 			AEntity* QueryH = QueryAt(Base += FIntVector(0, 0, 1));//Grid[Flatten(Base += FIntVector(0, 0, 1))];
-
+=======
+			AEntity* QueryH = Grid[Flatten(Base += FIntVector(0, 0, 1))];
+>>>>>>> 49a1fba93e42dcc8c07ce5a22c2ea583fc5998cd
 			if (!QueryH || !(QueryH->Flags & MOVEABLE) || (QueryH->IsA<ASuperposition>())) break; //how to deal with superposition???
 
 			bSuperUpdated |= UpdateEntityPosition(SubTurn, QueryH, SubTurn.Move);
