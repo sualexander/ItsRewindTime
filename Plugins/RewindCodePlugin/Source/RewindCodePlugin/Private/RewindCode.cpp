@@ -305,8 +305,17 @@ void UGameManager::ProcessTurn(EInputStates Input)
 
 	int32 SubTurnIndex = CurrentTurn->SubTurns.Emplace(struct SubTurn(Player, MoveInput)); //Record input state for current player
 
-	//Check superposition
-	if ((Player->Flags & SUPER) && ((SubTurnIndex != 0) && (CurrentTurn->SubTurns[SubTurnIndex].Move != CurrentTurn->SubTurns[SubTurnIndex - 1].Move))) {
+	//Check superposition, need to check position
+	//evluate mvmt for  all entities not in superposition first to see final location of superposition
+	if (SubTurnIndex != 0) {
+		for (int32 i = 0; i < SubTurnIndex; ++i)
+		{
+			SubTurn& SubTurn = CurrentTurn->SubTurns[i];
+			if ((SubTurn.Player->Flags & SUPER) && (SubTurn.Move != CurrentTurn->SubTurns[i - 1].Move)) {
+			}
+		}
+	}
+	if ((Player->Flags & SUPER) && (SubTurnIndex != 0) && (CurrentTurn->SubTurns[SubTurnIndex].Move != CurrentTurn->SubTurns[SubTurnIndex - 1].Move)) {
 		Player->Flags &= ~SUPER;
 		if (SubTurnIndex == 1) {
 			CurrentTurn->SubTurns[0].Player->Flags &= ~SUPER;
@@ -602,7 +611,7 @@ void UEntityAnimator::Start(const Turn& Turn)
 	}
 
 	if (QueueIndices.IsEmpty()) return;
-	QueueIndices.Shrink();
+	//QueueIndices.Shrink();
 
 	//Group adjacent "subturns" if all entities' paths are non-intersecting
 	int32 Index = 0;
