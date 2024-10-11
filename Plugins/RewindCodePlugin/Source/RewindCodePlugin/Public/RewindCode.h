@@ -25,7 +25,15 @@ public:
 	UGameManager* GameManager;
 };
 
-class APlayerEntity;
+//This should be moved elsewhere
+struct EntityGrid
+{
+	int32 WIDTH, LENGTH, HEIGHT;
+	TArray<AEntity*> Grid;
+
+	AEntity* QueryAt(const FIntVector& Location, bool* bIsValid = nullptr);
+	void SetAt(const FIntVector& Location, AEntity* Entity);
+};
 
 UCLASS()
 class REWINDCODEPLUGIN_API UGameManager : public UObject
@@ -37,61 +45,37 @@ public:
 
 	UWorld* WorldContext;
 	class ARewindPlayerController* PlayerController;
-
 	UPROPERTY()
 	UEntityAnimator* Animator;
 
-	FIntVector StartGridPosition;
+	//Input
+	EInputStates Buffer;
+	double InputTimerStart;
 
 	void HandleInput();
 	void ProcessTurn(EInputStates Input);
 	void OnTurnEnd();
 
-	void QueueRewind();
-	void DoRewind();
-
-	bool bRewindQueued = false;
-
-	double InputTimerStart;
-	EInputStates Buffer;
-
-	UMaterialInstanceDynamic* PlayerMI;
-
-	APlayerEntity* Player;
-	TArray<APlayerEntity*> AllPlayers;
-	ASuperposition* Superposition;
-
+	//Main
 	TArray<struct Turn> Turns;
 	int32 TurnCounter = 0;
 
-	TArray<AEntity*> Grid;
+	TArray<APlayerEntity*> Players;
+	TArray<ASuperposition*> Superpositions;
+
+	void EvaluateSubTurn(struct SubTurn& SubTurn);
+	bool EvaluateSuperposition(const struct SubTurn& SubTurn, AEntity* A, AEntity* B);
+	void UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta);
+
+	//Rewind
+	TArray<AEntity*> RewindQueue;
+	void DoRewind();
+
+	//Grid
+	EntityGrid Grid;
 	int32 BLOCK_SIZE = 300;
-	int32 WIDTH = 10, LENGTH = 10, HEIGHT = 5;
-
-	int32 Flatten(int32 X, int32 Y, int32 Z)
-	{
-		return X + (Y * WIDTH) + (Z * WIDTH * LENGTH);
-	}
-	int32 Flatten(const FIntVector& Location)
-	{
-
-		int ret = Location.X + (Location.Y * WIDTH) + (Location.Z * WIDTH * LENGTH);
-
-		if (ret < 0 || ret > Grid.Num()) {
-			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(ret));
-			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(Location.Z));
-			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(Location.Y));
-			GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(Location.X));
-			return 0;
-		}
-
-		return ret;
-	}
-
-	AEntity* QueryAt(const FIntVector& Location);
-
-	void MoveEntity(struct SubTurn& SubTurn);
-	bool UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta);
+	FIntVector StartGridLocation;
+	int32 HEIGHT_MIN = -5;
 
 	void LoadGridFromFile();
 };
@@ -114,7 +98,7 @@ class REWINDCODEPLUGIN_API AEntity : public AStaticMeshActor
 
 public:
 	uint32 Flags = 0;
-	FIntVector GridPosition;
+	FIntVector GridLocation;
 };
 
 UCLASS(Blueprintable)
@@ -125,7 +109,7 @@ class REWINDCODEPLUGIN_API APlayerEntity : public AEntity
 public:
 	APlayerEntity();
 
-	void Init(FIntVector Loc);
+	ASuperposition* Superposition;
 };
 
 UCLASS(Blueprintable)
@@ -134,10 +118,7 @@ class REWINDCODEPLUGIN_API ASuperposition : public AEntity
 	GENERATED_BODY()
 
 public:
-	bool bUpdated = false;
-
-	TArray<APlayerEntity*> Players;
-
+	bool bOccupied = false;
 };
 
 //------------------------------------------------
@@ -145,21 +126,20 @@ public:
 struct Turn
 {
 	//Per turn data flags? 
-	TArray<SubTurn> SubTurns;
+	TArray<struct SubTurn> SubTurns;
 };
 
 struct SubTurn //Timelines
 {
 	AEntity* Player;
 	FIntVector Move;
+	FIntVector Location;
 
 	TArray<AEntity*> Entities;
-	TArray<uint8> PathIndices; //Maps to AllPaths
+	TArray<uint16> PathIndices; //Maps to AllPaths
 
 	TArray<FIntVector> AllPaths;
 	//TArray<void*> Other;
-
-	bool bSuperCollapse = false;
 
 	SubTurn(AEntity* Player, FIntVector& Move) : Player(Player), Move(Move) {}
 };
@@ -198,7 +178,7 @@ public:
 	FOnAnimationsFinished OnAnimationsFinished;
 
 	TArray<EntityAnimationPath> Queue;
-	TArray<uint8> QueueIndices;
+	TArray<uint16> QueueIndices;
 	int32 QueueIndex;
 
 	float HorizontalSpeed = 0.25, VerticalSpeed = 0.15;
