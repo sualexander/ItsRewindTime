@@ -59,13 +59,17 @@ public:
 	//Main
 	TArray<struct Turn> Turns;
 	int32 TurnCounter = 0;
+	int32 TimelineCounter = 0;
 
 	TArray<APlayerEntity*> Players;
 	TArray<ASuperposition*> Superpositions;
 
 	void EvaluateSubTurn(struct SubTurn& SubTurn);
-	bool EvaluateSuperposition(const struct SubTurn& SubTurn, AEntity* A, AEntity* B);
 	void UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta);
+	bool CheckSuperposition(AEntity* To, AEntity* From);
+
+	APlayerEntity* SpawnPlayer();
+	ASuperposition* SpawnSuperposition();
 
 	//Rewind
 	TArray<AEntity*> RewindQueue;
@@ -78,6 +82,10 @@ public:
 	int32 HEIGHT_MIN = -5;
 
 	void LoadGridFromFile();
+
+	//Blueprints
+	UClass* PlayerBlueprint;
+	UClass* SuperBlueprint;
 };
 
 //move base entity stuff into seperate file
@@ -107,9 +115,8 @@ class REWINDCODEPLUGIN_API APlayerEntity : public AEntity
 	GENERATED_BODY()
 
 public:
-	APlayerEntity();
-
 	ASuperposition* Superposition;
+	bool bInSuperposition = false;
 };
 
 UCLASS(Blueprintable)
@@ -118,7 +125,8 @@ class REWINDCODEPLUGIN_API ASuperposition : public AEntity
 	GENERATED_BODY()
 
 public:
-	bool bOccupied = false;
+	TArray<APlayerEntity*> Players;
+	ASuperposition* OldSuperposition;
 };
 
 //------------------------------------------------
@@ -131,7 +139,7 @@ struct Turn
 
 struct SubTurn //Timelines
 {
-	AEntity* Player;
+	APlayerEntity* Player;
 	FIntVector Move;
 	FIntVector Location;
 
@@ -141,7 +149,7 @@ struct SubTurn //Timelines
 	TArray<FIntVector> AllPaths;
 	//TArray<void*> Other;
 
-	SubTurn(AEntity* Player, FIntVector& Move) : Player(Player), Move(Move) {}
+	SubTurn(AEntity* Player, FIntVector& Move);
 };
 
 struct EntityAnimationPath
@@ -181,7 +189,7 @@ public:
 	TArray<uint16> QueueIndices;
 	int32 QueueIndex;
 
-	float HorizontalSpeed = 0.25, VerticalSpeed = 0.15;
+	float HorizontalSpeed = 0.5, VerticalSpeed = 0.1;
 
 	/*UPROPERTY(EditDefaultsOnly, Category = "Animation", BlueprintReadWrite)
 	FVectorCurve MoveLocationCurve;*/

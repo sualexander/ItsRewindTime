@@ -5,6 +5,13 @@
 
 #include "Kismet/GameplayStatics.h"
 
+
+DEFINE_LOG_CATEGORY_STATIC(Rewind, Log, All);
+
+#define LOG(Str, ...) UE_LOG(Rewind, Log, TEXT(Str), ##__VA_ARGS__)
+#define WARN(Str, ...) UE_LOG(Rewind, Warning, TEXT(Str), ##__VA_ARGS__);
+#define ERROR(Str, ...) UE_LOG(Rewind, Error, TEXT(Str), ##__VA_ARGS__)
+
 #if 1
 #define SLOG(x) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Yellow, x);
 #define SLOGF(x) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Red, FString::SanitizeFloat(x));
@@ -17,6 +24,7 @@
 #define LINE(x1, x2, c)
 #endif
 
+#pragma optimize("", off) //remove when done or add #if WITH_EDITOR
 
 ARewindGameMode::ARewindGameMode()
 {
@@ -49,35 +57,45 @@ UGameManager::UGameManager()
 	Animator->WorldContext = WorldContext;
 	Animator->OnAnimationsFinished.BindUObject(this, &UGameManager::OnTurnEnd);
 
+	//There must be a better way to do this...
+	static ConstructorHelpers::FClassFinder<APlayerEntity> PlayerBP(TEXT("/Game/Blueprints/BP_Player"));
+	static ConstructorHelpers::FClassFinder<ASuperposition> SuperBP(TEXT("/Game/Blueprints/BP_Superposition"));
+	PlayerBlueprint = PlayerBP.Class;
+	SuperBlueprint = SuperBP.Class;
+
 	//Move everything below here out to somewhere else
 	LoadGridFromFile();
 
-	APlayerEntity* Player = WorldContext->SpawnActor<APlayerEntity>(FVector(StartGridLocation) * BLOCK_SIZE, FRotator::ZeroRotator);
-	Player->SetMobility(EComponentMobility::Movable);
+	APlayerEntity* Player = SpawnPlayer();
+	Grid.SetAt(StartGridLocation, Player);
 
-	Players.Emplace(Player);
-	Player->GridLocation = StartGridLocation;
-	Grid.SetAt(Player->GridLocation, Player);
-
-	Player->Flags |= CURRENT_PLAYER;
-
-	Player->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Meshes/RewindCube")));
-	UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(Player->GetStaticMeshComponent()->GetMaterial(0), Player);
-	Material->SetScalarParameterValue(FName(TEXT("Glow")), 10.f);
-	Player->GetStaticMeshComponent()->SetMaterial(0, Material);
-
-
-	ASuperposition* Superposition = WorldContext->SpawnActor<ASuperposition>(FVector(StartGridLocation) * BLOCK_SIZE, FRotator::ZeroRotator);
-	Superpositions.Emplace(Superposition);
-	Superposition->SetMobility(EComponentMobility::Movable);
-	Superposition->SetActorHiddenInGame(true);
-
-	Superposition->GridLocation = StartGridLocation;
-
-	Superposition->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Meshes/RewindCube")));
-	Superposition->GetStaticMeshComponent()->SetMaterial(0, LoadObject<UMaterial>(nullptr, TEXT("/Game/Meshes/M_Superposition.M_Superposition")));
+	SpawnSuperposition();
 
 	Turns.Emplace(Turn()); //dummy to line up indices with turn counter
+}
+
+APlayerEntity* UGameManager::SpawnPlayer()
+{
+	APlayerEntity* Player = WorldContext->SpawnActor<APlayerEntity>(PlayerBlueprint, FVector(StartGridLocation) * BLOCK_SIZE, FRotator::ZeroRotator);
+	Players.Emplace(Player);
+
+	Player->Flags |= PLAYER | MOVEABLE | CURRENT_PLAYER;
+	Player->GridLocation = StartGridLocation;
+
+	Player->GetStaticMeshComponent()->SetCustomPrimitiveDataFloat(0, TimelineCounter);
+
+	return Player;
+}
+
+ASuperposition* UGameManager::SpawnSuperposition()
+{
+	ASuperposition* Superposition = WorldContext->SpawnActor<ASuperposition>(SuperBlueprint, FVector(StartGridLocation) * BLOCK_SIZE, FRotator::ZeroRotator);
+	Superpositions.Emplace(Superposition);
+
+	Superposition->Flags |= MOVEABLE;
+	Superposition->GridLocation = StartGridLocation;
+
+	return Superposition;
 }
 
 void UGameManager::HandleInput()
@@ -85,7 +103,7 @@ void UGameManager::HandleInput()
 	//maybe change to state enum later
 	if (!RewindQueue.IsEmpty())
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Can't move with rewind queued"));
+		LOG("Can't move with rewind queued");
 		return;
 	}
 
@@ -97,13 +115,13 @@ void UGameManager::HandleInput()
 
 void UGameManager::OnTurnEnd()
 {
-	UE_LOG(LogTemp, Warning, TEXT("Ending Turn %d"), TurnCounter);
+	LOG("Ending Turn %d", TurnCounter);
 
 	double Elapsed = InputTimerStart - WorldContext->RealTimeSeconds;
 	InputTimerStart = 0;
 
 	if (!RewindQueue.IsEmpty()) {
-		UE_LOG(LogTemp, Warning, TEXT("IT'S REWIND TIME!!!!!"));
+		LOG("IT'S REWIND TIME!!!!!");
 		DoRewind();
 		return;
 	}
@@ -126,54 +144,34 @@ void UGameManager::DoRewind()
 {
 	//Do animations
 	//animations should update grid as well
-	for (AEntity* P : Players)
-	{
-		Grid.SetAt(P->GridLocation, nullptr);
-	}
 
 
 	//Start new timeline
+	++TimelineCounter;
 	RewindQueue.Empty();
 	TurnCounter = 0;
 
-	APlayerEntity* Player = Players.Last();
-	Player->Flags &= (~CURRENT_PLAYER);
+	Players.Last()->Flags &= (~CURRENT_PLAYER);
+	SpawnPlayer();
 
-	Player = WorldContext->SpawnActor<APlayerEntity>(FVector(StartGridLocation) * BLOCK_SIZE, FRotator::ZeroRotator);
-	Player->SetMobility(EComponentMobility::Movable);
-
-	Players.Emplace(Player);
-	Player->GridLocation = StartGridLocation;
-
-	Player->Flags |= CURRENT_PLAYER;
-
-	Player->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Meshes/RewindCube")));
-	UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(Player->GetStaticMeshComponent()->GetMaterial(0), Player);
-	Material->SetVectorParameterValue(FName(TEXT("Color")), FColor::MakeRandomColor());
-	Player->GetStaticMeshComponent()->SetMaterial(0, Material);
-
-
-	if (Superpositions.IsEmpty()) {
-		ASuperposition* Superposition = WorldContext->SpawnActor<ASuperposition>(FVector(StartGridLocation) * BLOCK_SIZE, FRotator::ZeroRotator);
-		Superpositions.Emplace(Superposition);
-		Superposition->SetMobility(EComponentMobility::Movable);
-		Superposition->SetActorHiddenInGame(true);
-
-		Superposition->GridLocation = StartGridLocation;
-
-		Superposition->GetStaticMeshComponent()->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Meshes/RewindCube")));
-		Superposition->GetStaticMeshComponent()->SetMaterial(0, LoadObject<UMaterial>(nullptr, TEXT("/Game/Meshes/M_Superposition.M_Superposition")));
-	}
-	Superpositions[0]->SetActorLocation(FVector(StartGridLocation) * BLOCK_SIZE);
 	Superpositions[0]->SetActorHiddenInGame(false);
 	Superpositions[0]->GridLocation = StartGridLocation;
 	Grid.SetAt(StartGridLocation, Superpositions[0]);
+	Superpositions[0]->SetActorLocation(FVector(StartGridLocation) * BLOCK_SIZE);
 
-	for (APlayerEntity* P : Players)
+	Superpositions[0]->Players.Reset();
+	Superpositions[0]->Players.Append(Players);
+
+	for (APlayerEntity* Player : Players)
 	{
-		P->Flags |= SUPER;
-		P->SetActorHiddenInGame(true);
-		P->Superposition = Superpositions[0];
+		Player->Flags |= SUPER;
+		Player->bInSuperposition = true;
+		Player->Superposition = Superpositions[0];
+
+		Grid.SetAt(Player->GridLocation, nullptr);
+		Player->GridLocation = StartGridLocation;
+		Player->SetActorLocation(FVector(StartGridLocation) * BLOCK_SIZE);
+		Player->SetActorHiddenInGame(true);
 	}
 }
 
@@ -199,9 +197,9 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	AEntity* CurrentPlayer = Players.Last();
 	for (FIntVector GridLocation = CurrentPlayer->GridLocation;;)
 	{
-		AEntity* Entity = Grid.QueryAt(GridLocation += MoveInput);
-		if (!Entity) break;
-		if (!(Entity->Flags & MOVEABLE)) return;
+		AEntity* Front = Grid.QueryAt(GridLocation += MoveInput);
+		if (!Front) break;
+		if (!(Front->Flags & MOVEABLE)) return;
 	}
 
 	//Allocate new turn object if current timeline is the longest so far
@@ -215,7 +213,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		CurrentTurn = &Turns[TurnCounter];
 	}
 
-	int32 SubTurnIndex = CurrentTurn->SubTurns.Emplace(struct SubTurn(CurrentPlayer, MoveInput)); //Record input state for current player
+	CurrentTurn->SubTurns.Emplace(struct SubTurn(CurrentPlayer, MoveInput)); //Record input state for current player
 
 	//Evaluate subturns
 	for (int32 i = CurrentTurn->SubTurns.Num() - 1; i >= 0; --i)
@@ -227,66 +225,6 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		EvaluateSubTurn(CurrentTurn->SubTurns[i]);
 	}
 
-	//This is kinda retarted but it does its job
-	TMap<FIntVector, TArray<APlayerEntity*>> SuperGroups;
-	for (APlayerEntity* Player : Players)
-	{	
-		if (Player->Flags & SUPER) {
-			SuperGroups.FindOrAdd(Player->GridLocation).Emplace(Player);
-		}
-	}
-
-	for (ASuperposition* Superposition : Superpositions)
-	{
-		Superposition->bOccupied = false;
-	}
-
-	for (const auto& Pair : SuperGroups)
-	{
-		if (Pair.Value.Num() > 1) {
-			ASuperposition* Superposition = Pair.Value[0]->Superposition;
-			if (Superposition->bOccupied) {
-				//spawn another one
-			}
-			
-			int32 SubturnIndex = 0; //Superposition has precedence of its most recent player
-			for (APlayerEntity* Player : Pair.Value)
-			{
-				Player->Superposition = Superposition;
-				SubturnIndex = FMath::Max(Players.Find(Player), SubTurnIndex);
-			}
-
-			Grid.SetAt(Superposition->GridLocation, nullptr);
-			Grid.SetAt(Pair.Value[0]->GridLocation, Superposition);
-			Superposition->GridLocation = Pair.Value[0]->GridLocation;
-
-			SubTurn& Subturn = CurrentTurn->SubTurns[SubturnIndex];
-			int32 Index = Subturn.AllPaths.Emplace(Superposition->GridLocation);
-
-			if (Subturn.Entities.IsEmpty() || Subturn.Entities.Last() != Superposition) {
-				Subturn.Entities.Emplace(Superposition);
-				Subturn.PathIndices.Emplace(Index);
-			}
-		}
-		else {
-			APlayerEntity* Player = Pair.Value[0];
-			Player->Flags &= ~SUPER;
-
-			//Queue superposition-collapse animation
-			Player->SetActorHiddenInGame(false);
-			Player->SetActorLocation(Player->Superposition->GetActorLocation());
-			
-			//should make re-use queue later instead of destroying
-			if (!Player->Superposition->bOccupied) {
-				Superpositions.RemoveSingle(Player->Superposition);
-				Player->Superposition->Destroy();
-			}
-			Player->Superposition = nullptr;
-
-			//add animation path???
-
-		}
-	}
 
 	//remove any animation paths after any of these end states
 	//look through rewind queue
@@ -306,85 +244,156 @@ void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 	Connected.Emplace(SubTurn.Player);
 	for (FIntVector GridLocation = SubTurn.Player->GridLocation;;)
 	{
-		AEntity* Entity = Grid.QueryAt(GridLocation += SubTurn.Move);
-		if (!Entity) break;
-		if (!(Entity->Flags & MOVEABLE)) return;
+		AEntity* Front = Grid.QueryAt(GridLocation += SubTurn.Move);
+		if (!Front) break;
+		if (!(Front->Flags & MOVEABLE)) return;
+		if (!Connected.IsEmpty() && CheckSuperposition(Front, Connected.Last())) break;
 
-		if (Connected.Num() > 1) {
-			AEntity* Prev = Connected[Connected.Num() - 2];
-			if (EvaluateSuperposition(SubTurn, Entity, Prev)) return;
+		Connected.Emplace(Front);
+	}
+
+	//Is this where this goes???
+	if (SubTurn.Player->Flags & SUPER) {
+		if (SubTurn.Player->bInSuperposition) {
+			SubTurn.Player->Superposition->Players.RemoveSingle(SubTurn.Player);
+			SubTurn.Player->bInSuperposition = false;
+
+			//superposition collapse animation
+			SubTurn.Player->SetActorHiddenInGame(false);
+
+			if (SubTurn.Player->Superposition->Players.Num() == 1) {
+				SubTurn.Player->Superposition->Players.Empty();
+				SubTurn.Player->Superposition->GridLocation = FIntVector(-1, -1, -1);
+			}
 		}
-
-		Connected.Emplace(Entity);
+		else {
+			SubTurn.Player->Flags &= ~SUPER;
+			SubTurn.Player->Superposition = nullptr;
+		}
 	}
 
 	//Update from farthest to self
 	for (int32 i = Connected.Num() - 1; i >= 0; --i)
 	{
 		//Update from bottom up, and evaluate horizontal movement before gravity
-		FIntVector Base = Connected[i]->GridLocation;
+		AEntity* Entity = Connected[i];
+		FIntVector EntityOrigin = Entity->GridLocation;
+		UpdateEntityPosition(SubTurn, Entity, SubTurn.Move);
 
-		UpdateEntityPosition(SubTurn, Connected[i], SubTurn.Move);
-
-		for (AEntity* Below = Grid.QueryAt(Connected[i]->GridLocation + DownVector)
-			;; Below = Grid.QueryAt(Connected[i]->GridLocation + DownVector))
+		for (;;)
 		{
-			if (Below && EvaluateSuperposition(SubTurn, Below, Connected[i])) break;
+			AEntity* Below = Grid.QueryAt(Entity->GridLocation + DownVector);
+			if (Below && !CheckSuperposition(Below, Entity)) break;
 
-			UpdateEntityPosition(SubTurn, Connected[i], DownVector);
-
-			if (Connected[i]->GridLocation.Z == HEIGHT_MIN) {
+			if (Entity->GridLocation.Z - 1 <= HEIGHT_MIN) {
+				if (i == 0) {
+					//timeline collapse
+					LOG("collapse");
+				}
 				//do stuff like stop rendering, play fade animation etc...
-				UE_LOG(LogTemp, Warning, TEXT("Fell off da world"));
+				LOG("Fell off da world");
 				break;
 			}
+
+			UpdateEntityPosition(SubTurn, Entity, DownVector);
 		}
 
 		for (;;)
 		{
-			AEntity* Entity = Grid.QueryAt(Base += UpVector);
-			if (!Entity || !(Entity->Flags & MOVEABLE)) break;
+			AEntity* Up = Grid.QueryAt(EntityOrigin += UpVector);
+			if (!Up || !(Up->Flags & MOVEABLE)) break;
 
-			AEntity* Front = Grid.QueryAt(Base + SubTurn.Move);
+			AEntity* Front = Grid.QueryAt(EntityOrigin + SubTurn.Move);
 			if (Front && !(Front->Flags & MOVEABLE)) break;
 
-			UpdateEntityPosition(SubTurn, Entity, SubTurn.Move);
-	
-			for (AEntity* Below = Grid.QueryAt(Entity->GridLocation + DownVector);
-				 !Below; Below = Grid.QueryAt(Entity->GridLocation + DownVector))
+			UpdateEntityPosition(SubTurn, Up, SubTurn.Move);
+
+			for (;;)
 			{
-				UpdateEntityPosition(SubTurn, Entity, DownVector);
-				//I'm pretty sure this will never infinite loop
+				AEntity* Below = Grid.QueryAt(Up->GridLocation + DownVector);
+				if (Below) break;
+				if (Up->GridLocation.Z - 1 <= HEIGHT_MIN) {
+					//do stuff like stop rendering, play fade animation etc...
+					LOG("Should this even ever print??? Fell off da world");
+					break;
+				}
+
+				UpdateEntityPosition(SubTurn, Up, DownVector);
 			}
 		}
 	}
-}
 
-bool UGameManager::EvaluateSuperposition(const SubTurn& SubTurn, AEntity* A, AEntity* B)
-{
-	if (!(A->Flags & SUPER) || !(B->Flags & SUPER)) return false;
-
-	FIntVector Origin(-1, -1, -1);
-	for (int32 i = Turns[TurnCounter].SubTurns.Num() - 1;; --i)
+	//This is kinda retarted but it is what it is
+	TMap<FIntVector, TArray<APlayerEntity*>> NewSupers;
+	for (APlayerEntity* Player : Players)
 	{
-		const struct SubTurn& Sub = Turns[TurnCounter].SubTurns[i];
-		if (&Sub == &SubTurn) break;
-		if (int32 Index = Sub.Entities.Find(A)) {
-			Origin = Sub.AllPaths[Sub.PathIndices[Index]];
-			break;
+		if ((Player->Flags & SUPER) && !Player->bInSuperposition) {
+			//Merge into an existing superposition
+			for (ASuperposition* Superposition : Superpositions)
+			{
+				if (Superposition->GridLocation == Player->GridLocation) {
+					Superposition->Players.Emplace(Player);
+					Player->bInSuperposition = true;
+					Player->Superposition = Superposition;
+					Player->SetActorHiddenInGame(true); //defer to animation
+					
+					goto LoopEnd;
+				}
+			}
+
+			//New superposition
+			NewSupers.FindOrAdd(Player->GridLocation).Emplace(Player);
+		}
+		LoopEnd: continue;
+	}
+
+	for (const auto& Pair : NewSupers)
+	{
+		if (Pair.Value.Num() > 1) {
+			ASuperposition* NewSuper = nullptr;
+			for (ASuperposition* Superposition : Superpositions)
+			{
+				if (Superposition->Players.IsEmpty()) {
+					NewSuper = Superposition;
+
+					NewSuper->SetActorHiddenInGame(false);
+
+					break;
+				}
+			}
+			if (!NewSuper) {
+				NewSuper = SpawnSuperposition();
+			}
+
+			NewSuper->OldSuperposition = Pair.Value[0]->Superposition;
+
+			for (APlayerEntity* Player : Pair.Value)
+			{
+				Player->bInSuperposition = true;
+				Player->Superposition = NewSuper;
+				NewSuper->Players.Emplace(Player);
+			}
+
+			NewSuper->GridLocation = Pair.Value[0]->GridLocation;
+			Grid.SetAt(NewSuper->GridLocation, NewSuper);
+			NewSuper->SetActorLocation(FVector(NewSuper->GridLocation) * BLOCK_SIZE);
 		}
 	}
 
-	return Origin == B->GridLocation;
+	for (ASuperposition* Superposition : Superpositions)
+	{
+		if (Superposition->Players.Num() < 2) {
+			Superposition->SetActorHiddenInGame(true);
+		}
+	}
 }
 
 void UGameManager::UpdateEntityPosition(SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta)
 {
-	if (Entity->Flags & SUPER) {
-		AEntity* Query = Grid.QueryAt(Entity->GridLocation + Delta);
-		if (Query && (Query->Flags & SUPER)) {
-			Entity->GridLocation += Delta;
-			return;
+	if (ASuperposition* Superposition = Cast<ASuperposition>(Entity)) {
+		for (APlayerEntity* Player : Superposition->Players)
+		{
+			Player->GridLocation += Delta;
 		}
 	}
 
@@ -409,6 +418,22 @@ void UGameManager::UpdateEntityPosition(SubTurn& SubTurn, AEntity* Entity, const
 	}
 }
 
+bool UGameManager::CheckSuperposition(AEntity* To, AEntity* From)
+{
+	if (From->Flags & SUPER) {
+		if ((To->Flags & SUPER) &&
+			StaticCast<APlayerEntity*>(To)->Superposition == StaticCast<APlayerEntity*>(From)->Superposition) {
+			return true;
+		}
+
+		ASuperposition* Superposition = Cast<ASuperposition>(To);
+		if (Superposition && (Superposition->OldSuperposition == StaticCast<APlayerEntity*>(From)->Superposition)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void UGameManager::LoadGridFromFile()
 {
 	FString FilePath = FPaths::ProjectContentDir() / TEXT("Grids/MainLevelGrid.txt");
@@ -416,7 +441,7 @@ void UGameManager::LoadGridFromFile()
 	if (FFileHelper::LoadFileToString(FileContent, *FilePath))
 	{
 		// File successfully read
-		UE_LOG(LogTemp, Warning, TEXT("File content: %s"), *FileContent);
+		LOG("File content: %s", *FileContent);
 		int a = 0;
 		int b = 0;
 		while (FileContent.Mid(b, 1) != ",") b++;
@@ -494,11 +519,16 @@ void UGameManager::LoadGridFromFile()
 	else
 	{
 		// Error reading file
-		UE_LOG(LogTemp, Error, TEXT("Failed to read file."));
+		ERROR("Failed to read file.");
 	}
 }
 
 //------------------------------------------------------------------
+
+SubTurn::SubTurn(AEntity* InPlayer, FIntVector& Move) : Move(Move)
+{
+	Player = StaticCast<APlayerEntity*>(InPlayer);
+}
 
 AEntity* EntityGrid::QueryAt(const FIntVector& Location, bool* bIsValid)
 {
@@ -506,7 +536,7 @@ AEntity* EntityGrid::QueryAt(const FIntVector& Location, bool* bIsValid)
 		Location.Y < 0 || Location.Y >= LENGTH ||
 		Location.Z < 0 || Location.Z >= HEIGHT) 
 	{
-		UE_LOG(LogTemp, Error, TEXT("Invalid query at x: %d, y: %d, z: %d"), Location.X, Location.Y, Location.Z);
+		ERROR("Invalid query at x: %d, y: %d, z: %d", Location.X, Location.Y, Location.Z);
 		if (bIsValid) *bIsValid = false;
 		return nullptr;
 	}
@@ -521,18 +551,11 @@ void EntityGrid::SetAt(const FIntVector& Location, AEntity* Entity)
 		Location.Y < 0 || Location.Y >= LENGTH ||
 		Location.Z < 0 || Location.Z >= HEIGHT)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Invalid set at x: %d, y: %d, z: %d"), Location.X, Location.Y, Location.Z);
+		ERROR("Invalid set at x: %d, y: %d, z: %d", Location.X, Location.Y, Location.Z);
 		return;
 	}
 
 	Grid[Location.X + (Location.Y * WIDTH) + (Location.Z * WIDTH * LENGTH)] = Entity;
-}
-
-//------------------------------------------------------------------
-
-APlayerEntity::APlayerEntity()
-{
-	Flags |= PLAYER | MOVEABLE;
 }
 
 //-----------------------------------------------------------------------------
