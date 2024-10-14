@@ -75,6 +75,8 @@ UGameManager::UGameManager()
 	SpawnSuperposition();
 
 	Turns.Emplace(Turn()); //dummy to line up indices with turn counter
+
+	VisualizeGrid();
 }
 
 void UGameManager::HandleMovementInput()
@@ -209,6 +211,8 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		}
 	}
 
+	VisualizeGrid();
+
 	//remove any animation paths after any of these end states
 	//look through rewind queue
 
@@ -283,9 +287,8 @@ void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 				SubTurn.Player->Superposition->Players[0]->bInSuperposition = false;
 				SubTurn.Player->Superposition->Players[0]->SetActorHiddenInGame(false);
 
-				Grid.SetAt(SubTurn.Player->Superposition->GridLocation, SubTurn.Player->Superposition->Players[0]);
-				SubTurn.Player->Superposition->GridLocation = FIntVector(-1, -1, -1);
 				SubTurn.Player->Superposition->Players.Empty();
+				SubTurn.Player->Superposition->GridLocation = FIntVector(-1, -1, -1);
 			}
 		}
 	}

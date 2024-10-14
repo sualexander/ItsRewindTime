@@ -67,7 +67,7 @@ void ARewindPlayerController::SetupInputComponent()
 
 	EnhancedInputComponent->BindAction(DebugAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnDebug, true);
 	EnhancedInputComponent->BindAction(DebugAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnDebug, false);
-	EnhancedInputComponent->BindAction(DebugSpeed, ETriggerEvent::Triggered, this, &ARewindPlayerController::OnMouseScroll);
+	EnhancedInputComponent->BindAction(DebugSpeed, ETriggerEvent::Ongoing, this, &ARewindPlayerController::OnMouseScroll);
 	ScrollValue = &EnhancedInputComponent->BindActionValue(DebugSpeed);
 
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();

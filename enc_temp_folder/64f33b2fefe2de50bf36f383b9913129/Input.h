@@ -78,8 +78,7 @@ public:
 	float SpeedMultiplier = 1;
 	void OnMouseScroll()
 	{
-		SpeedMultiplier = FMath::Clamp(SpeedMultiplier + (ScrollValue->GetValue().Get<float>() * 0.5), 0, 10);
-		UE_LOG(LogTemp, Warning, TEXT("%f"), SpeedMultiplier);
+		SpeedMultiplier += ScrollValue->GetValue().Get<float>() * 1;
 	}
 
 	//void OnRestart(bool b);

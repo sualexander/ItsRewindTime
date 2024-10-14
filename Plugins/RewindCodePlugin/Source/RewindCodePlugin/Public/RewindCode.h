@@ -35,7 +35,7 @@ struct EntityGrid
 	void SetAt(const FIntVector& Location, AEntity* Entity);
 };
 
-UCLASS()
+UCLASS(BlueprintType)
 class REWINDCODEPLUGIN_API UGameManager : public UObject
 {
 	GENERATED_BODY()
@@ -89,6 +89,10 @@ public:
 	//Blueprints
 	UClass* PlayerBlueprint;
 	UClass* SuperBlueprint;
+
+	//Debug
+	UFUNCTION(BlueprintCallable)
+	void VisualizeGrid();
 };
 
 //move base entity stuff into seperate file
@@ -190,5 +194,6 @@ public:
 	TArray<uint16> QueueIndices;
 	int32 QueueIndex;
 
+	UGameManager* Temp;
 	float HorizontalSpeed = 0.25, VerticalSpeed = 0.1;
 };
