@@ -13,11 +13,13 @@ struct FInputActionValue;
 
 enum EInputStates
 {
-	NONE = 0,
-	W = 1 << 0,
-	S = 1 << 1,
-	A = 1 << 2,
-	D = 1 << 3
+	NONE	= 0,
+	W		= 1U,
+	S		= 1U << 1,
+	A		= 1U << 2,
+	D		= 1U << 3,
+	PASS	= 1U << 4,
+	UNDO	= 1U << 5
 };
 
 UCLASS(Blueprintable, BlueprintType)
@@ -48,18 +50,17 @@ public:
 
 	struct FEnhancedInputActionValueBinding* ForwardMoveValue, *SideMoveValue;
 
-	int32 CurrentInputState = 0;
+	uint32 CurrentInputState = 0;
 	EInputStates NewestInput = NONE;
 	TArray<EInputStates> Stack;
 
 	DECLARE_DELEGATE(FOnInputChanged)
 	FOnInputChanged OnInputChanged;
 
-	DECLARE_DELEGATE(FOnPassPressed)
+	DECLARE_DELEGATE_OneParam(FOnPassPressed, bool)
 	FOnPassPressed OnPassPressed;
 
-
-	void OnPassTurn(const FInputActionValue& Value);
+	void OnPassTurn(bool bStart) { OnPassPressed.Execute(bStart); }
 
 
 	//void OnRestart(bool b);
