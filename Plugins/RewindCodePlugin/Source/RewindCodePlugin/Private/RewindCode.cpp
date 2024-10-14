@@ -191,6 +191,15 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		EvaluateSubTurn(CurrentTurn->SubTurns[i]);
 	}
 
+	//Unsuper players after no more merging can be done
+	for (int32 i = CurrentTurn->SubTurns.Num() - 1; i >= 0; --i)
+	{
+		if (!CurrentTurn->SubTurns[i].Player->bInSuperposition) {
+			CurrentTurn->SubTurns[i].Player->Flags &= ~SUPER;
+			CurrentTurn->SubTurns[i].Player->Superposition = nullptr;
+		}
+	}
+
 
 	//remove any animation paths after any of these end states
 	//look through rewind queue
@@ -378,10 +387,6 @@ void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 			NewSuper->GridLocation = Pair.Value[0]->GridLocation;
 			Grid.SetAt(NewSuper->GridLocation, NewSuper);
 			NewSuper->SetActorLocation(FVector(NewSuper->GridLocation) * BLOCK_SIZE);
-		}
-		else {
-			Pair.Value[0]->Flags &= ~SUPER;
-			Pair.Value[0]->Superposition = nullptr;
 		}
 	}
 
