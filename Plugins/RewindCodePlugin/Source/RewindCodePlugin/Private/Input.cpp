@@ -51,8 +51,8 @@ void ARewindPlayerController::SetupInputComponent()
 	ForwardMoveValue = &EnhancedInputComponent->BindActionValue(ForwardMoveAction);
 	SideMoveValue = &EnhancedInputComponent->BindActionValue(SideMoveAction);
 
-	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnPassTurn);
-	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnPassTurn);
+	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnPassTurn, true);
+	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnPassTurn, false);
 	//Undo
 
 	//EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnRestart, true);
@@ -94,10 +94,4 @@ void ARewindPlayerController::Tick(float DeltaTime)
 	CurrentInputState = NewInputState;
 	NewestInput = Stack.IsEmpty() ? NONE : Stack.Last();
 	OnInputChanged.Execute();
-}
-
-void ARewindPlayerController::OnPassTurn(const FInputActionValue& Value)
-{
-	bool State = Value.Get<bool>();
-	UE_LOG(LogTemp, Warning, TEXT("PassTurn %s"), State ? TEXT("Start") : TEXT("End"));
 }

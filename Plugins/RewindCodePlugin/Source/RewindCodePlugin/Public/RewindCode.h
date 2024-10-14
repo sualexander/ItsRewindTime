@@ -51,8 +51,11 @@ public:
 	//Input
 	EInputStates Buffer;
 	double InputTimerStart;
+	void HandleMovementInput();
 
-	void HandleInput();
+	bool bHasPassed = false;
+	bool bPassPressed = false;
+	void HandlePassInput(bool bStart);
 	void ProcessTurn(EInputStates Input);
 	void OnTurnEnd();
 
@@ -91,12 +94,11 @@ public:
 //move base entity stuff into seperate file
 enum EntityFlags : uint32
 {
-	PLAYER = 1U,
-	MOVEABLE = 2U,
-	REWIND = 4U,
-	SUPER = 8U,
-	CURRENT_PLAYER = 16U,
-	GOAL = 32U
+	MOVEABLE			= 1U,
+	REWIND				= 1U << 1,
+	SUPER				= 1U << 2,
+	GOAL				= 1U << 3,
+	CURRENT_PLAYER		= 1U << 4
 };
 
 UCLASS()
@@ -162,7 +164,6 @@ struct EntityAnimationPath
 	FVector StartLocation;
 
 	EntityAnimationPath(AEntity* Entity) : Entity(Entity) {}
-
 };
 
 UCLASS()
@@ -189,8 +190,5 @@ public:
 	TArray<uint16> QueueIndices;
 	int32 QueueIndex;
 
-	float HorizontalSpeed = 0.5, VerticalSpeed = 0.1;
-
-	/*UPROPERTY(EditDefaultsOnly, Category = "Animation", BlueprintReadWrite)
-	FVectorCurve MoveLocationCurve;*/
+	float HorizontalSpeed = 0.25, VerticalSpeed = 0.1;
 };
