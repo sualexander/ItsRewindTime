@@ -188,7 +188,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 
 	CurrentTurn->SubTurns.Emplace(struct SubTurn(CurrentPlayer, MoveInput)); //Record input state for current player
 
-	int EndTimelineSubturnIndex = -1;
+	int32 EndTimelineSubturnIndex = -1;
 
 	//Evaluate subturns
 	for (int32 i = CurrentTurn->SubTurns.Num() - 1; i >= 0; --i)
@@ -267,7 +267,6 @@ static const FIntVector DownVector(0, 0, -1), UpVector(0, 0, 1);
 
 void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 {
-
 	//Query in direction of movement until wall or air
 	TArray<AEntity*> Connected;
 	Connected.Emplace(SubTurn.Player);
@@ -329,7 +328,6 @@ void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 
 		for (;;)
 		{
-
 			AEntity* Up = Grid.QueryAt(EntityOrigin += UpVector);
 			if (!Up || !(Up->Flags & MOVEABLE)) break;
 
