@@ -58,8 +58,6 @@ UGameManager::UGameManager()
 	Animator->WorldContext = WorldContext;
 	Animator->OnAnimationsFinished.BindUObject(this, &UGameManager::OnTurnEnd);
 
-	Animator->Temp = this; //pls remove asap
-
 	//There must be a better way to do this...
 	static ConstructorHelpers::FClassFinder<APlayerEntity> PlayerBP(TEXT("/Game/Blueprints/BP_Player"));
 	static ConstructorHelpers::FClassFinder<ASuperposition> SuperBP(TEXT("/Game/Blueprints/BP_Superposition"));
@@ -79,8 +77,6 @@ UGameManager::UGameManager()
 
 void UGameManager::HandleMovementInput()
 {
-	if (PlayerController->bIsDebugging) return;
-
 	//maybe change to state enum later
 	if (!RewindQueue.IsEmpty())
 	{
@@ -99,8 +95,6 @@ void UGameManager::HandleMovementInput()
 
 void UGameManager::HandlePassInput(bool bStart)
 {
-	if (PlayerController->bIsDebugging) return;
-
 	bPassPressed = bStart;
 	if (!bStart) {
 		bHasPassed = false;
@@ -113,7 +107,6 @@ void UGameManager::HandlePassInput(bool bStart)
 void UGameManager::OnTurnEnd()
 {
 	LOG("Ending Turn %d", TurnCounter);
-	if (PlayerController->bIsDebugging) return;
 
 	double Elapsed =  WorldContext->RealTimeSeconds - InputTimerStart;
 	InputTimerStart = 0;
@@ -188,23 +181,17 @@ void UGameManager::ProcessTurn(EInputStates Input)
 
 	CurrentTurn->SubTurns.Emplace(struct SubTurn(CurrentPlayer, MoveInput)); //Record input state for current player
 
-	int EndTimelineSubturnIndex = -1;
-
 	//Evaluate subturns
 	for (int32 i = CurrentTurn->SubTurns.Num() - 1; i >= 0; --i)
 	{
-		if (CurrentTurn->SubTurns[i].Move.IsZero()) continue;
-
 		CurrentTurn->SubTurns[i].Entities.Reset();
 		CurrentTurn->SubTurns[i].PathIndices.Reset();
 		CurrentTurn->SubTurns[i].AllPaths.Reset();
 
 		EvaluateSubTurn(CurrentTurn->SubTurns[i]);
-
-		if (EndTimelineSubturnIndex == -1 && !RewindQueue.IsEmpty()) EndTimelineSubturnIndex = i;
 	}
 
-	//"Un-super" unmerged players
+	//Unsuper players after no more merging can be done
 	for (int32 i = CurrentTurn->SubTurns.Num() - 1; i >= 0; --i)
 	{
 		if (!CurrentTurn->SubTurns[i].Player->bInSuperposition) {
@@ -213,19 +200,14 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		}
 	}
 
+
 	//remove any animation paths after any of these end states
 	//look through rewind queue
 
 	Buffer = NONE;
 
-
-	SLOGF(EndTimelineSubturnIndex)
-
-	if (EndTimelineSubturnIndex == -1) EndTimelineSubturnIndex = 0;
-
-
 	//Dispatch animations
-	Animator->Start(*CurrentTurn, EndTimelineSubturnIndex);
+	Animator->Start(*CurrentTurn);
 }
 
 void UGameManager::DoRewind()
@@ -267,21 +249,22 @@ static const FIntVector DownVector(0, 0, -1), UpVector(0, 0, 1);
 
 void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 {
-
 	//Query in direction of movement until wall or air
 	TArray<AEntity*> Connected;
-	Connected.Emplace(SubTurn.Player);
-	for (FIntVector GridLocation = SubTurn.Player->GridLocation;;)
-	{
-		AEntity* Front = Grid.QueryAt(GridLocation += SubTurn.Move);
-		if (!Front) break;
-		if (!(Front->Flags & MOVEABLE)) return;
-		if (!Connected.IsEmpty() && CheckSuperposition(Front, Connected.Last())) break;
+	if (!SubTurn.Move.IsZero()) {
+		Connected.Emplace(SubTurn.Player);
+		for (FIntVector GridLocation = SubTurn.Player->GridLocation;;)
+		{
+			AEntity* Front = Grid.QueryAt(GridLocation += SubTurn.Move);
+			if (!Front) break;
+			if (!(Front->Flags & MOVEABLE)) return;
+			if (!Connected.IsEmpty() && CheckSuperposition(Front, Connected.Last())) break;
 
-		Connected.Emplace(Front);
+			Connected.Emplace(Front);
+		}
 	}
 
-	//Un-super subturn's player
+	//Is this where this goes???
 	if (SubTurn.Player->Flags & SUPER) {
 		if (SubTurn.Player->bInSuperposition) {
 			SubTurn.Player->Superposition->Players.RemoveSingle(SubTurn.Player);
@@ -294,9 +277,8 @@ void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 				SubTurn.Player->Superposition->Players[0]->bInSuperposition = false;
 				SubTurn.Player->Superposition->Players[0]->SetActorHiddenInGame(false);
 
-				Grid.SetAt(SubTurn.Player->Superposition->GridLocation, SubTurn.Player->Superposition->Players[0]);
-				SubTurn.Player->Superposition->GridLocation = FIntVector(-1, -1, -1);
 				SubTurn.Player->Superposition->Players.Empty();
+				SubTurn.Player->Superposition->GridLocation = FIntVector(-1, -1, -1);
 			}
 		}
 	}
@@ -329,12 +311,16 @@ void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 
 		for (;;)
 		{
-
+//<<<<<<< HEAD
+			//AEntity* QueryH = Grid[Flatten(Connected[i]->GridPosition + FIntVector(0, 0, 1))];
+			//if (!QueryH || !(QueryH->Flags & MOVEABLE) || (QueryH->IsA<ASuperposition>())) break;
+//=======
 			AEntity* Up = Grid.QueryAt(EntityOrigin += UpVector);
 			if (!Up || !(Up->Flags & MOVEABLE)) break;
 
 			AEntity* Front = Grid.QueryAt(EntityOrigin + SubTurn.Move);
 			if (Front && !(Front->Flags & MOVEABLE)) break;
+//>>>>>>> 38a3215e017aacdcfaec025a933223180ddefd24
 
 			UpdateEntityPosition(SubTurn, Up, SubTurn.Move);
 
@@ -415,18 +401,6 @@ void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 			Superposition->SetActorHiddenInGame(true);
 		}
 	}
-
-	if (SubTurn.bIsPlayersFinalMove && !(SubTurn.Player->Flags & CURRENT_PLAYER)) {
-		//Check for timeline collapse
-
-		AEntity* QueryBelow = Grid.QueryAt(SubTurn.Player->GridLocation + DownVector);
-		if (QueryBelow && (QueryBelow->Flags & REWIND)) {
-			LOG("Player successfully finished its moves and reached Rewind Tile")
-		}
-		else {
-			LOG("TIMELINE COLLAPSE TRIGGERED")
-		}
-	}
 }
 
 void UGameManager::UpdateEntityPosition(SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta)
@@ -438,9 +412,7 @@ void UGameManager::UpdateEntityPosition(SubTurn& SubTurn, AEntity* Entity, const
 		}
 	}
 
-	if (Grid.QueryAt(Entity->GridLocation) == Entity) {
-		Grid.SetAt(Entity->GridLocation, nullptr);
-	}
+	Grid.SetAt(Entity->GridLocation, nullptr);
 	Grid.SetAt(Entity->GridLocation + Delta, Entity);
 	Entity->GridLocation += Delta;
 
@@ -448,8 +420,6 @@ void UGameManager::UpdateEntityPosition(SubTurn& SubTurn, AEntity* Entity, const
 	AEntity* Query = Grid.QueryAt(Entity->GridLocation + DownVector);
 	if (Query && (Query->Flags & REWIND) && (Entity->Flags & CURRENT_PLAYER)) {
 		RewindQueue.Emplace(Entity);
-		if (Entity == SubTurn.Player)
-			SubTurn.bIsPlayersFinalMove = true;
 	}
 	if (Query && (Query->Flags & GOAL)) {
 		SLOG("YOU WIN!")
@@ -501,26 +471,6 @@ ASuperposition* UGameManager::SpawnSuperposition()
 	Superposition->GridLocation = StartGridLocation;
 
 	return Superposition;
-}
-
-void UGameManager::VisualizeGrid()
-{
-	FlushDebugStrings(WorldContext);
-	for (int32 i = 0; i < Grid.Grid.Num(); ++i)
-	{
-		AEntity* Entity = Grid.Grid[i];
-		if (!Entity || !(Entity->Flags & MOVEABLE)) {
-			int32 Index = i;
-			int32 Z = Index / 100;
-			Index -= (Z * 100);
-			int32 Y = Index / 10;
-			int32 X = Index % 10;
-			DrawDebugString(WorldContext, FVector(X, Y, Z) * BLOCK_SIZE, FString::FromInt(i));
-		}
-		else {
-			DrawDebugString(WorldContext, FVector(Entity->GridLocation) * BLOCK_SIZE, Entity->GetActorLabel(), NULL, FColor::Red);
-		}
-	}
 }
 
 void UGameManager::LoadGridFromFile()
@@ -617,7 +567,6 @@ void UGameManager::LoadGridFromFile()
 SubTurn::SubTurn(AEntity* InPlayer, FIntVector& Move) : Move(Move)
 {
 	Player = StaticCast<APlayerEntity*>(InPlayer);
-	bIsPlayersFinalMove = false;
 }
 
 AEntity* EntityGrid::QueryAt(const FIntVector& Location, bool* bIsValid)
@@ -650,14 +599,14 @@ void EntityGrid::SetAt(const FIntVector& Location, AEntity* Entity)
 
 //-----------------------------------------------------------------------------
 
-void UEntityAnimator::Start(const Turn& Turn, int EndIndex)
+void UEntityAnimator::Start(const Turn& Turn)
 {
 	Queue.Reset();
 	QueueIndices.Reset();
 	QueueIndex = 0;
 
 	double CurrentTime = WorldContext->TimeSeconds;
-	for (int32 SubTurnIndex = Turn.SubTurns.Num() - 1; SubTurnIndex >= EndIndex; --SubTurnIndex)
+	for (int32 SubTurnIndex = Turn.SubTurns.Num() - 1; SubTurnIndex >= 0; --SubTurnIndex)
 	{
 		const SubTurn& SubTurn = Turn.SubTurns[SubTurnIndex];
 		if (SubTurn.Entities.IsEmpty()) continue;
@@ -708,7 +657,6 @@ void UEntityAnimator::Tick(float DeltaTime)
 		}
 
 		float MoveTime = (Animation.Path[Animation.PathIndex] - Animation.StartLocation).Z < 0 ? VerticalSpeed : HorizontalSpeed; //should be saved in animation struct
-		MoveTime *= Temp->PlayerController->SpeedMultiplier;
 		float Alpha = FMath::Clamp((CurrentTime - Animation.StartTime) / MoveTime, 0, 1);
 		Animation.Entity->SetActorLocation(FMath::Lerp(Animation.StartLocation, Animation.Path[Animation.PathIndex], Alpha));
 

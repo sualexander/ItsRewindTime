@@ -35,7 +35,7 @@ struct EntityGrid
 	void SetAt(const FIntVector& Location, AEntity* Entity);
 };
 
-UCLASS(BlueprintType)
+UCLASS()
 class REWINDCODEPLUGIN_API UGameManager : public UObject
 {
 	GENERATED_BODY()
@@ -89,10 +89,6 @@ public:
 	//Blueprints
 	UClass* PlayerBlueprint;
 	UClass* SuperBlueprint;
-
-	//Debug
-	UFUNCTION(BlueprintCallable)
-	void VisualizeGrid();
 };
 
 //move base entity stuff into seperate file
@@ -155,8 +151,6 @@ struct SubTurn //Timelines
 	TArray<FIntVector> AllPaths;
 	//TArray<void*> Other;
 
-	bool bIsPlayersFinalMove; //Can be changed to a uint32 flags if more bools are needed for SubTurn
-
 	SubTurn(AEntity* Player, FIntVector& Move);
 };
 
@@ -186,7 +180,7 @@ public:
 		RETURN_QUICK_DECLARE_CYCLE_STAT(UEntityAnimator, STATGROUP_Tickables);
 	}
 
-	void Start(const struct Turn& Turn, int EndIndex);
+	void Start(const struct Turn& Turn);
 	UWorld* WorldContext;
 
 	DECLARE_DELEGATE(FOnAnimationsFinished)
@@ -196,6 +190,5 @@ public:
 	TArray<uint16> QueueIndices;
 	int32 QueueIndex;
 
-	UGameManager* Temp;
 	float HorizontalSpeed = 0.25, VerticalSpeed = 0.1;
 };
