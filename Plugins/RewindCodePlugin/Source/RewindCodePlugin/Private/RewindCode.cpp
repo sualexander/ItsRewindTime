@@ -24,6 +24,7 @@ DEFINE_LOG_CATEGORY_STATIC(Rewind, Log, All);
 #define LINE(x1, x2, c)
 #endif
 
+#pragma warning(disable: 4426) //line below suddenly started throwing compile error so...
 #pragma optimize("", off) //remove when done or add #if WITH_EDITOR
 
 ARewindGameMode::ARewindGameMode()
@@ -159,6 +160,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	case D:
 		MoveInput.X = -1;
 		break;
+	//can be removed after debugging
 	case PASS:
 		LOG("Passed turn %d", TurnCounter + 1);
 		break;
@@ -186,9 +188,9 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		CurrentTurn = &Turns[TurnCounter];
 	}
 
-	CurrentTurn->SubTurns.Emplace(struct SubTurn(CurrentPlayer, MoveInput)); //Record input state for current player
+	SubTurn& CurrentSubturn = CurrentTurn->SubTurns.Emplace_GetRef(struct SubTurn(CurrentPlayer, MoveInput)); //Record input state for current player
 
-	int32 EndTimelineSubturnIndex = -1;
+	int32 EndTimelineSubturnIndex = -1;  //needs to be more specific as a subturn also has duration technically
 
 	//Evaluate subturns
 	for (int32 i = CurrentTurn->SubTurns.Num() - 1; i >= 0; --i)
@@ -212,6 +214,9 @@ void UGameManager::ProcessTurn(EInputStates Input)
 			CurrentTurn->SubTurns[i].Player->Superposition = nullptr;
 		}
 	}
+
+	int32 PathIndex = CurrentSubturn.PathIndices[1];
+	CurrentSubturn.Location = CurrentSubturn.AllPaths[PathIndex == 0 ? PathIndex : PathIndex - 1];
 
 	//remove any animation paths after any of these end states
 	//look through rewind queue
@@ -280,7 +285,7 @@ void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 		Connected.Emplace(Front);
 	}
 
-	//Un-super subturn's player
+	//Un-super this subturn's player
 	if (SubTurn.Player->Flags & SUPER) {
 		if (SubTurn.Player->bInSuperposition) {
 			SubTurn.Player->Superposition->Players.RemoveSingle(SubTurn.Player);
@@ -419,10 +424,11 @@ void UGameManager::EvaluateSubTurn(SubTurn& SubTurn)
 
 		AEntity* QueryBelow = Grid.QueryAt(SubTurn.Player->GridLocation + DownVector);
 		if (QueryBelow && (QueryBelow->Flags & REWIND)) {
-			LOG("Player successfully finished its moves and reached Rewind Tile")
+			LOG("Player successfully finished its moves and reached Rewind Tile");
 		}
 		else {
-			LOG("TIMELINE COLLAPSE TRIGGERED")
+			LOG("TIMELINE COLLAPSE TRIGGERED");
+			CollapseTimeline();
 		}
 	}
 }
@@ -475,6 +481,63 @@ bool UGameManager::CheckSuperposition(AEntity* To, AEntity* From)
 		}
 	}
 	return false;
+}
+
+void UGameManager::CollapseTimeline(int32 Collapsed, int32 Current)
+{
+	int32 TurnIndex = Turns.Num() - 1;
+	for (; TurnIndex >= 0; --TurnIndex)
+	{
+		TArray<SubTurn>& Subturns = Turns[TurnIndex].SubTurns;
+		if (Subturns.Num() <= Collapsed || Subturns.Num() <= Current) continue;
+		//Subturns.Num() always == Current?
+
+		if (Subturns[Collapsed].Location == Subturns[Current].Location) break;
+	}
+
+	TurnIndex = TurnIndex == 0 ? TurnIndex : TurnIndex - 1;
+
+	//Clear excess turn/subturn data
+	Turns.SetNum(TurnIndex);
+	for (Turn& Turn : Turns)
+	{
+		Turn.SubTurns.SetNum(Collapsed);
+	}
+	TurnCounter = TurnIndex;
+	TimelineCounter = Collapsed;
+
+
+	//Restore entity state
+
+	//clear grid, obviously very temp solution
+	for (int32 i = 0; i < Grid.Grid.Num(); ++i)
+	{
+		if (Grid.Grid[i]->Flags & MOVEABLE) {
+			Grid.Grid[i] == nullptr;
+		}
+	}
+
+	for (int32 i = Players.Num() - 1; i > Collapsed; --i)
+	{
+		Players[i]->Destroy();
+		Players.RemoveAt(i);
+	}
+	//how to deal with superposition???
+
+	//Re-simulate subturns
+	for (Turn& Turn : Turns)
+	{
+		for (int32 i = Turn.SubTurns.Num() - 1; i >= 0; --i)
+		{
+			Turn.SubTurns[i].Entities.Empty();
+			Turn.SubTurns[i].PathIndices.Empty();
+			Turn.SubTurns[i].AllPaths.Empty();
+
+			EvaluateSubTurn(Turn.SubTurns[i]);
+		}
+	}
+
+	//
 }
 
 APlayerEntity* UGameManager::SpawnPlayer()
@@ -648,34 +711,31 @@ void EntityGrid::SetAt(const FIntVector& Location, AEntity* Entity)
 
 //-----------------------------------------------------------------------------
 
-void UEntityAnimator::Start(const Turn& Turn, int EndIndex)
+void UEntityAnimator::Start(const TArray<SubTurn>& Subturns, int32 Start, int32 End, bool bReverse)
 {
-	Queue.Reset();
-	QueueIndices.Reset();
-	QueueIndex = 0;
-
-	double CurrentTime = WorldContext->TimeSeconds;
-	for (int32 SubTurnIndex = Turn.SubTurns.Num() - 1; SubTurnIndex >= EndIndex; --SubTurnIndex)
+	for (int32 SubturnIndex = Start; SubturnIndex >= End; --SubturnIndex)
 	{
-		const SubTurn& SubTurn = Turn.SubTurns[SubTurnIndex];
-		if (SubTurn.Entities.IsEmpty()) continue;
+		const SubTurn& Subturn = Subturns[SubturnIndex];
+		if (Subturn.Entities.IsEmpty()) continue;
 
-		QueueIndices.Emplace(Queue.Num());
+		GroupIndices.Emplace(GroupQueue.Num());
 
 		int32 EntityIndex = 0;
-		for (; EntityIndex < SubTurn.Entities.Num(); ++EntityIndex)
+		for (; EntityIndex < Subturn.Entities.Num(); ++EntityIndex)
 		{
-			EntityAnimationPath& Path = Queue.Emplace_GetRef(EntityAnimationPath(SubTurn.Entities[EntityIndex]));
+			EntityAnimationPath& Path = GroupQueue.Emplace_GetRef(EntityAnimationPath(Subturn.Entities[EntityIndex]));
 
-			int32 EndIndex = EntityIndex == SubTurn.PathIndices.Num() - 1 ? SubTurn.AllPaths.Num() : SubTurn.PathIndices[EntityIndex + 1];
-			for (int32 PathIndex = SubTurn.PathIndices[EntityIndex]; PathIndex < EndIndex; ++PathIndex)
+			if (bReverse) {
+
+			}
+			int32 EndIndex = EntityIndex == Subturn.PathIndices.Num() - 1 ? Subturn.Paths.Num() : Subturn.PathIndices[EntityIndex + 1];
+			for (int32 PathIndex = Subturn.PathIndices[EntityIndex]; PathIndex < EndIndex; ++PathIndex)
 			{
-				Path.Path.Emplace(FVector(SubTurn.AllPaths[PathIndex]) * 300/*BLOCKS_SIZE*/);
+				Path.Path.Emplace(FVector(Subturn.Paths[PathIndex]) * BlockSize);
 			}
 		}
 	}
-	if (QueueIndices.IsEmpty()) return;
-	QueueIndices.Shrink();
+	if (GroupIndices.IsEmpty()) return;
 
 	//Group adjacent "subturns" if all entities' paths are non-intersecting
 	int32 Index = 0;
@@ -722,6 +782,11 @@ void UEntityAnimator::Tick(float DeltaTime)
 	if (bNextGroup) {
 		if (++QueueIndex == QueueIndices.Num()) {
 			bIsAnimating = false;
+
+			Queue.Empty();
+			QueueIndices.Empty();
+			QueueIndex = 0;
+
 			OnAnimationsFinished.Execute();
 		}
 	}

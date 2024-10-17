@@ -70,6 +70,7 @@ public:
 	void EvaluateSubTurn(struct SubTurn& SubTurn);
 	void UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta);
 	bool CheckSuperposition(AEntity* To, AEntity* From);
+	void CollapseTimeline(int32 Collapsed, int32 Current);
 
 	APlayerEntity* SpawnPlayer();
 	ASuperposition* SpawnSuperposition();
@@ -143,7 +144,7 @@ struct Turn
 	TArray<struct SubTurn> SubTurns;
 };
 
-struct SubTurn //Timelines
+struct SubTurnOld //Timelines
 {
 	APlayerEntity* Player;
 	FIntVector Move;
@@ -153,12 +154,54 @@ struct SubTurn //Timelines
 	TArray<uint16> PathIndices; //Maps to AllPaths
 
 	TArray<FIntVector> AllPaths;
-	//TArray<void*> Other;
 
 	bool bIsPlayersFinalMove; //Can be changed to a uint32 flags if more bools are needed for SubTurn
 
 	SubTurn(AEntity* Player, FIntVector& Move);
 };
+
+struct Timeline
+{
+	TArray<struct SubTurnHeader> Headers;
+	TArray<struct SubTurn> Subturns; //no need for indices cuz math
+};
+
+using GridCoord = UE::Math::TIntVector3<int8>;
+
+struct SubTurnHeader
+{
+	APlayerEntity* Player;
+	GridCoord Move;
+	bool bIsFinalMove; //maybe not necessarry
+};
+
+struct SubTurn
+{
+	TArray<AEntity*> Entities;
+	TArray<float> Durations;
+	TArray<struct EntityAnimation> Animations; //Double Entities length
+	TArray<uint16> PathIndices;
+
+	TArray<GridCoord> Paths;
+};
+
+struct EntityAnimation
+{
+	AnimationType Type;
+
+
+};
+
+enum AnimationType
+{
+	PLAYER_IN_SUPER,
+	PLAYER_OUT_SUPER,
+	SUPER_IN,
+	SUPER_OUT,
+	PFX,
+};
+
+//---------------------------------------------------------------------
 
 struct EntityAnimationPath
 {
@@ -178,23 +221,26 @@ class REWINDCODEPLUGIN_API UEntityAnimator : public UObject, public FTickableGam
 	GENERATED_BODY()
 
 public:
+	UWorld* WorldContext;
+	int32 BlockSize = 300;
+
 	void Tick(float DeltaTime) override;
 	bool IsTickable() const override { return bIsAnimating; }
-	bool bIsAnimating = false;
 	TStatId GetStatId() const override
 	{
 		RETURN_QUICK_DECLARE_CYCLE_STAT(UEntityAnimator, STATGROUP_Tickables);
 	}
 
+	bool bIsAnimating = false;
 	void Start(const struct Turn& Turn, int EndIndex);
-	UWorld* WorldContext;
+
+	TArray<EntityAnimationPath> GroupQueue;
+	TArray<uint16> GroupIndices;
+	int32 QueueIndex;
+	double GroupStartTime;
 
 	DECLARE_DELEGATE(FOnAnimationsFinished)
 	FOnAnimationsFinished OnAnimationsFinished;
-
-	TArray<EntityAnimationPath> Queue;
-	TArray<uint16> QueueIndices;
-	int32 QueueIndex;
 
 	UGameManager* Temp;
 	float HorizontalSpeed = 0.25, VerticalSpeed = 0.1;
