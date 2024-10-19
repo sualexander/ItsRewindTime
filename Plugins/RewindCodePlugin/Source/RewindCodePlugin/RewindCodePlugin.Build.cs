@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright It's Rewind Time 2024
 
 using UnrealBuildTool;
 
@@ -35,6 +35,8 @@ public class RewindCodePlugin : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
+				"EnhancedInput",
+				"InputCore"
 			}
 			);
 		
