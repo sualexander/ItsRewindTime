@@ -10,6 +10,8 @@
 
 
 enum EInputStates;
+using GridCoord = UE::Math::TIntVector3<int8>;
+
 
 UCLASS()
 class REWINDCODEPLUGIN_API ARewindGameMode : public AGameModeBase
@@ -31,8 +33,8 @@ struct EntityGrid
 	int32 WIDTH, LENGTH, HEIGHT;
 	TArray<AEntity*> Grid;
 
-	AEntity* QueryAt(const FIntVector& Location, bool* bIsValid = nullptr);
-	void SetAt(const FIntVector& Location, AEntity* Entity);
+	AEntity* QueryAt(const GridCoord& Location, bool* bIsValid = nullptr);
+	void SetAt(const GridCoord& Location, AEntity* Entity);
 };
 
 UCLASS(BlueprintType)
@@ -60,15 +62,15 @@ public:
 	void OnTurnEnd();
 
 	//Main
-	TArray<struct Turn> Turns;
+	TArray<struct Timeline> Timelines;
 	int32 TurnCounter = 0;
 	int32 TimelineCounter = 0;
 
 	TArray<APlayerEntity*> Players;
 	TArray<ASuperposition*> Superpositions;
 
-	void EvaluateSubTurn(struct SubTurn& SubTurn);
-	void UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const FIntVector& Delta);
+	void EvaluateSubTurn(const struct SubTurnHeader& Header, struct SubTurn& SubTurn);
+	void UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const GridCoord& Delta);
 	bool CheckSuperposition(AEntity* To, AEntity* From);
 	void CollapseTimeline(int32 Collapsed, int32 Current);
 
@@ -82,7 +84,7 @@ public:
 	//Grid
 	EntityGrid Grid;
 	int32 BLOCK_SIZE = 300;
-	FIntVector StartGridLocation;
+	GridCoord StartGridLocation;
 	int32 HEIGHT_MIN = -5;
 
 	void LoadGridFromFile();
@@ -113,7 +115,7 @@ class REWINDCODEPLUGIN_API AEntity : public AStaticMeshActor
 
 public:
 	uint32 Flags = 0;
-	FIntVector GridLocation;
+	GridCoord GridLocation;
 };
 
 UCLASS(Blueprintable)
@@ -138,41 +140,19 @@ public:
 
 //------------------------------------------------
 
-struct Turn
-{
-	//Per turn data flags? 
-	TArray<struct SubTurn> SubTurns;
-};
-
-struct SubTurnOld //Timelines
-{
-	APlayerEntity* Player;
-	FIntVector Move;
-	FIntVector Location;
-
-	TArray<AEntity*> Entities;
-	TArray<uint16> PathIndices; //Maps to AllPaths
-
-	TArray<FIntVector> AllPaths;
-
-	bool bIsPlayersFinalMove; //Can be changed to a uint32 flags if more bools are needed for SubTurn
-
-	SubTurn(AEntity* Player, FIntVector& Move);
-};
-
 struct Timeline
 {
 	TArray<struct SubTurnHeader> Headers;
 	TArray<struct SubTurn> Subturns; //no need for indices cuz math
 };
 
-using GridCoord = UE::Math::TIntVector3<int8>;
-
 struct SubTurnHeader
 {
 	APlayerEntity* Player;
 	GridCoord Move;
 	bool bIsFinalMove; //maybe not necessarry
+
+	SubTurnHeader(AEntity* Player, GridCoord& Move) {}
 };
 
 struct SubTurn
@@ -187,7 +167,7 @@ struct SubTurn
 
 struct EntityAnimation
 {
-	AnimationType Type;
+	enum AnimationType Type;
 
 
 };
@@ -207,12 +187,14 @@ struct EntityAnimationPath
 {
 	AEntity* Entity;
 	TArray<FVector> Path;
+	double StartTime;
 
 	int32 PathIndex = -2;
-	double StartTime;
+	double SubstepTime;
 	FVector StartLocation;
 
-	EntityAnimationPath(AEntity* Entity) : Entity(Entity) {}
+	EntityAnimationPath(AEntity* Entity, double StartTime)
+		: Entity(Entity), StartTime(StartTime) {}
 };
 
 UCLASS()
@@ -232,7 +214,7 @@ public:
 	}
 
 	bool bIsAnimating = false;
-	void Start(const struct Turn& Turn, int EndIndex);
+	void Start(const TArray<SubTurn>& Subturns, int32 Start, int32 End, bool bReverse);
 
 	TArray<EntityAnimationPath> GroupQueue;
 	TArray<uint16> GroupIndices;
