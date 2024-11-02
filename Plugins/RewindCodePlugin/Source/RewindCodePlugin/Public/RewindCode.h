@@ -58,6 +58,9 @@ public:
 	bool bHasPassed = false;
 	bool bPassPressed = false;
 	void HandlePassInput(bool bStart);
+
+	void HandleUndoInput();
+
 	void ProcessTurn(EInputStates Input);
 	void OnTurnEnd();
 
@@ -69,8 +72,8 @@ public:
 	TArray<APlayerEntity*> Players;
 	TArray<ASuperposition*> Superpositions;
 
-	void EvaluateSubTurn(const struct SubTurnHeader& Header, struct SubTurn& SubTurn);
-	void UpdateEntityPosition(struct SubTurn& SubTurn, AEntity* Entity, const GridCoord& Delta);
+	void EvaluateSubTurn(const struct SubTurnHeader& Header, struct SubTurn& Subturn);
+	void UpdateEntityPosition(struct SubTurn& Subturn, AEntity* Entity, const GridCoord& Delta);
 	bool CheckSuperposition(AEntity* To, AEntity* From);
 	void CollapseTimeline(int32 Collapsed, int32 Current);
 
@@ -152,7 +155,11 @@ struct SubTurnHeader
 	GridCoord Move;
 	bool bIsFinalMove; //maybe not necessarry
 
-	SubTurnHeader(AEntity* Player, GridCoord& Move) {}
+	SubTurnHeader() {}
+	SubTurnHeader(AEntity* InPlayer, GridCoord& Move) : Move(Move)
+	{
+		Player = StaticCast<APlayerEntity*>(InPlayer);
+	}
 };
 
 struct SubTurn
@@ -188,13 +195,13 @@ struct EntityAnimationPath
 	AEntity* Entity;
 	TArray<FVector> Path;
 	double StartTime;
+	int32 SubturnIndex;
 
 	int32 PathIndex = -2;
 	double SubstepTime;
-	FVector StartLocation;
 
-	EntityAnimationPath(AEntity* Entity, double StartTime)
-		: Entity(Entity), StartTime(StartTime) {}
+	EntityAnimationPath(AEntity* Entity, double StartTime, int32 SubturnIndex)
+		: Entity(Entity), StartTime(StartTime), SubturnIndex(SubturnIndex) {}
 };
 
 UCLASS()
@@ -206,6 +213,8 @@ public:
 	UWorld* WorldContext;
 	int32 BlockSize = 300;
 
+	TArray<SubTurn>* Subturns;
+
 	void Tick(float DeltaTime) override;
 	bool IsTickable() const override { return bIsAnimating; }
 	TStatId GetStatId() const override
@@ -214,12 +223,13 @@ public:
 	}
 
 	bool bIsAnimating = false;
-	void Start(const TArray<SubTurn>& Subturns, int32 Start, int32 End, bool bReverse);
+	void Start(TArray<SubTurn>& Subturns, int32 Start, int32 End, bool bReverse);
 
 	TArray<EntityAnimationPath> GroupQueue;
 	TArray<uint16> GroupIndices;
 	int32 QueueIndex;
 	double GroupStartTime;
+	bool bIsUndo;
 
 	DECLARE_DELEGATE(FOnAnimationsFinished)
 	FOnAnimationsFinished OnAnimationsFinished;

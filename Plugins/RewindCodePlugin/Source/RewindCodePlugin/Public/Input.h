@@ -62,6 +62,13 @@ public:
 
 	void OnPassTurn(bool bStart) { OnPassPressed.Execute(bStart); }
 
+	DECLARE_DELEGATE(FOnUndoPressed)
+	FOnUndoPressed OnUndoPressed;
+
+	void OnUndo() { OnUndoPressed.Execute(); }
+
+	
+	//Refactor pls
 	UPROPERTY()
 	UInputAction* DebugAction;
 	UPROPERTY()
