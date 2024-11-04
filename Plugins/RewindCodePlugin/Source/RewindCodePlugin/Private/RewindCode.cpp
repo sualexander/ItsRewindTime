@@ -115,19 +115,37 @@ void UGameManager::HandlePassInput(bool bStart)
 
 void UGameManager::HandleUndoInput()
 {
-	LOG("Undoed");
+	if (TurnCounter == 0) return;
+	LOG("Undoed turn %d", TurnCounter);
 
 	Timeline& Timeline = Timelines[TimelineCounter];
 
-	Animator->Start(Timeline.Subturns, (TimelineCounter + 1) * (TurnCounter - 1) + TimelineCounter, (TimelineCounter + 1) * (TurnCounter - 1), true);
+	//Update grid
+	int32 EndIndex = (TimelineCounter + 1) * (TurnCounter - 1);
+	for (int32 i = EndIndex + TimelineCounter; i >= EndIndex; --i)
+	{
+		SubTurn& Subturn = Timeline.Subturns[i];
+		for (int32 j = 0; j < Subturn.Entities.Num(); ++j)
+		{
+			AEntity* Entity = Subturn.Entities[j];
+			Grid.SetAt(Entity->GridLocation, nullptr);
+			Entity->GridLocation = Subturn.Paths[Subturn.PathIndices[j]];
+			Grid.SetAt(Entity->GridLocation, Entity);
+		}
+	}
+
+	Animator->Start(Timeline.Subturns, EndIndex, EndIndex + TimelineCounter, true);
 
 	Timeline.Headers.RemoveAt(Timeline.Headers.Num() - 1, 1, true);
 	Timeline.Subturns.RemoveAt((TimelineCounter + 1) * (TurnCounter - 1), TimelineCounter + 1, true);
 	--TurnCounter;
+
 }
 
 void UGameManager::OnTurnEnd()
 {
+	VisualizeGrid();
+
 	LOG("Ending Turn %d", TurnCounter);
 	if (PlayerController->bIsDebugging) return;
 
@@ -175,8 +193,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	case D:
 		MoveInput.X = -1;
 		break;
-	//can be removed after debugging
-	case PASS:
+	case PASS: //can be removed after debugging
 		LOG("Passed turn %d", TurnCounter + 1);
 	}
 
@@ -202,15 +219,15 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	for (int32 i = TimelineCounter; i >= 0; --i)
 	{
 		SubTurn& Subturn = Timeline.Subturns.Emplace_GetRef();
-		SubTurnHeader& Header = Timelines[TimelineCounter].Headers[TurnCounter - 1];
+		//check if past timeline is over
+		SubTurnHeader& Header = Timelines[i].Headers[TurnCounter - 1];
 		if (Header.Move.IsZero()) continue;
 
 		EvaluateSubTurn(Header, Subturn);
-
-		Subturn.Durations.Init(0, Subturn.Entities.Num());
+		Subturn.Durations.Init(0, Subturn.Entities.Num()); //We shouldn't do this for already filled subturns right???
 
 		if (EndIndex == -1 && !RewindQueue.IsEmpty()) {
-			EndIndex = (TimelineCounter + 1) * (TurnCounter - 1) + TimelineCounter;
+			EndIndex = (i + 1) * (TurnCounter - 1) + i;
 		}
 	}
 
@@ -220,6 +237,10 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		if (!Player->bInSuperposition) {
 			Player->Flags &= ~SUPER;
 			Player->Superposition = nullptr;
+
+			Timeline.Subturns.Last().Entities.Find(Player);
+
+
 		}
 	}
 
@@ -230,7 +251,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 
 	int32 StartIndex = (TimelineCounter + 1) * (TurnCounter - 1);
 
-	Animator->Start(Timeline.Subturns, EndIndex, StartIndex, false);
+	Animator->Start(Timeline.Subturns, StartIndex, EndIndex, false);
 }
 
 void UGameManager::DoRewind()
@@ -241,6 +262,8 @@ void UGameManager::DoRewind()
 
 	//Start new timeline
 	++TimelineCounter;
+	Timelines.Emplace();
+
 	RewindQueue.Empty();
 	TurnCounter = 0;
 
@@ -668,7 +691,7 @@ void EntityGrid::SetAt(const GridCoord& Location, AEntity* Entity)
 
 void UEntityAnimator::Start(TArray<SubTurn>& InSubturns, int32 Start, int32 End, bool bReverse)
 {
-	for (int32 SubturnIndex = Start; SubturnIndex >= End; --SubturnIndex)
+	for (int32 SubturnIndex = Start; SubturnIndex <= End; ++SubturnIndex)
 	{
 		const SubTurn& Subturn = InSubturns[SubturnIndex];
 		if (Subturn.Entities.IsEmpty()) continue;
@@ -735,12 +758,11 @@ void UEntityAnimator::Tick(float DeltaTime)
 			Animation.SubstepTime = CurrentTime;
 		}
 
-		float MoveTime = 0.5;//(Animation.Path[Animation.PathIndex] - Animation.StartLocation).Z < 0 ? VerticalSpeed : HorizontalSpeed;
+		float MoveTime = 0.25;//(Animation.Path[Animation.PathIndex] - Animation.StartLocation).Z < 0 ? VerticalSpeed : HorizontalSpeed;
 		//MoveTime *= Temp->PlayerController->SpeedMultiplier;
 		float Alpha = FMath::Clamp((CurrentTime - Animation.SubstepTime) / MoveTime, 0, 1);
 
 		int32 PathEnd = Animation.PathIndex == Animation.Path.Num() - 1 ? Animation.Path.Num() - 1 : Animation.PathIndex + 1;
-		//Need to also check beginning of array???
 		Animation.Entity->SetActorLocation(FMath::Lerp(Animation.Path[Animation.PathIndex], Animation.Path[PathEnd], Alpha));
 
 		if (Animation.Entity->GetActorLocation() == Animation.Path[PathEnd]) {
