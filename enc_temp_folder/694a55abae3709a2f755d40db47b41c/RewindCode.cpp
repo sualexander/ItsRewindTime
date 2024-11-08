@@ -317,8 +317,8 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	if (TimelineCounter == 0) {
 		Timeline.Headers[TurnCounter - 1].bTurnWasMatched = true;
 	}
-	else if (TurnCounter - 1 < Timelines[TimelineCounter - 1].Headers.Num()) {
-		Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].bTurnWasMatched = true;
+	else if (TurnCounter - 1 <= Timelines[TimelineCounter - 1].Headers.Num()) {
+		//Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].bTurnWasMatched = true;
 		for (int i = 0; i < Players.Num() - 1; i++) {
 			if (Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].PlayerPositionsAfterTurn[Players[i]] != Players[i]->GridLocation) {
 				Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].bTurnWasMatched = false;
@@ -326,7 +326,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 			}
 		}
 
-		SLOG((Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].bTurnWasMatched ? "TURN MATCHED" : "TURN FAILED TO MATCH"))
+		//SLOG((Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].bTurnWasMatched ? "TURN MATCHED" : "TURN FAILED TO MATCH"))
 	}
 
 
