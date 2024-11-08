@@ -165,25 +165,10 @@ struct SubTurn
 {
 	TArray<AEntity*> Entities;
 	TArray<float> Durations;
-	TArray<union EntityData> EntityData;
 	TArray<struct EntityAnimation> Animations; //Double Entities length
 	
 	TArray<uint16> PathIndices;
 	TArray<GridCoord> Paths;
-};
-
-union EntityData
-{
-	struct 
-	{
-		ASuperposition* Superposition;
-		bool bInSuperposition;
-	} Player;
-	struct 
-	{
-		//TArray<APlayerEntity*> Players;
-		ASuperposition* OldSuperposition;
-	} Super;
 };
 
 struct EntityAnimation

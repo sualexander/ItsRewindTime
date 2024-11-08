@@ -115,12 +115,12 @@ void UGameManager::HandlePassInput(bool bStart)
 
 void UGameManager::HandleUndoInput()
 {
+	//Need to handle game states in general
 	if (TurnCounter == 0) return;
 	LOG("Undoed turn %d", TurnCounter);
 
 	Timeline& Timeline = Timelines[TimelineCounter];
 
-	//Update grid
 	int32 EndIndex = (TimelineCounter + 1) * (TurnCounter - 1);
 	for (int32 i = EndIndex + TimelineCounter; i >= EndIndex; --i)
 	{
@@ -132,9 +132,63 @@ void UGameManager::HandleUndoInput()
 			Entity->GridLocation = Subturn.Paths[Subturn.PathIndices[j]];
 			Grid.SetAt(Entity->GridLocation, Entity);
 		}
+
+		for (ASuperposition* Super : Superpositions)
+		{
+			Super->Players.Empty();
+			//Super->OldSuperposition = nullptr;
+		}
+
+		TMap<GridCoord, TArray<APlayerEntity*>> Overlapping;
+		for (APlayerEntity* Player : Players)
+		{
+			Overlapping.FindOrAdd(Player->GridLocation).Emplace(Player);
+		}
+
+		for (const auto& Pair : Overlapping)
+		{
+			if (Pair.Value.Num() > 1) {
+				ASuperposition* NewSuper = nullptr;
+				for (ASuperposition* Superposition : Superpositions)
+				{
+					if (Superposition->Players.IsEmpty()) {
+						NewSuper = Superposition;
+						break;
+					}
+				}
+
+				for (APlayerEntity* Player : Pair.Value) {
+					NewSuper->Players.Emplace(Player);
+					//Superposition->OldSuperposition = Player->Superposition;
+					NewSuper->SetActorHiddenInGame(false);
+
+					Player->Flags |= SUPER;
+					Player->Superposition = NewSuper;
+					Player->bInSuperposition = true;
+					Player->SetActorHiddenInGame(true);
+				}
+
+				NewSuper->GridLocation = Pair.Value[0]->GridLocation;
+				Grid.SetAt(NewSuper->GridLocation, NewSuper);
+				NewSuper->SetActorLocation(FVector(NewSuper->GridLocation) * BLOCK_SIZE);
+			}
+			else {
+				Pair.Value[0]->Flags &= ~SUPER;
+				Pair.Value[0]->bInSuperposition = false;
+				Pair.Value[0]->Superposition = nullptr;
+				Pair.Value[0]->SetActorHiddenInGame(false);
+			}
+		}
+
+		for (ASuperposition* Super : Superpositions)
+		{
+			if (Super->Players.Num() < 2) {
+				Super->SetActorHiddenInGame(true);
+			}
+		}
 	}
 
-	Animator->Start(Timeline.Subturns, EndIndex, EndIndex + TimelineCounter, true);
+	Animator->Start(Timeline.Subturns, EndIndex + TimelineCounter, EndIndex, true);
 
 	Timeline.Headers.RemoveAt(Timeline.Headers.Num() - 1, 1, true);
 	Timeline.Subturns.RemoveAt((TimelineCounter + 1) * (TurnCounter - 1), TimelineCounter + 1, true);
@@ -144,8 +198,6 @@ void UGameManager::HandleUndoInput()
 
 void UGameManager::OnTurnEnd()
 {
-	VisualizeGrid();
-
 	LOG("Ending Turn %d", TurnCounter);
 	if (PlayerController->bIsDebugging) return;
 
@@ -219,7 +271,8 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	for (int32 i = TimelineCounter; i >= 0; --i)
 	{
 		SubTurn& Subturn = Timeline.Subturns.Emplace_GetRef();
-		//check if past timeline is over
+		if (TurnCounter - 1 >= Timelines[i].Headers.Num()) continue;
+
 		SubTurnHeader& Header = Timelines[i].Headers[TurnCounter - 1];
 		if (Header.Move.IsZero()) continue;
 
@@ -238,9 +291,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 			Player->Flags &= ~SUPER;
 			Player->Superposition = nullptr;
 
-			Timeline.Subturns.Last().Entities.Find(Player);
-
-
+			//Timeline.Subturns.Last().Entities.Find(Player);
 		}
 	}
 
@@ -691,7 +742,7 @@ void EntityGrid::SetAt(const GridCoord& Location, AEntity* Entity)
 
 void UEntityAnimator::Start(TArray<SubTurn>& InSubturns, int32 Start, int32 End, bool bReverse)
 {
-	for (int32 SubturnIndex = Start; SubturnIndex <= End; ++SubturnIndex)
+	for (int32 SubturnIndex = Start; bReverse ? SubturnIndex >= End : SubturnIndex <= End; SubturnIndex += bReverse ? -1 : 1)
 	{
 		const SubTurn& Subturn = InSubturns[SubturnIndex];
 		if (Subturn.Entities.IsEmpty()) continue;
