@@ -6,6 +6,8 @@
 #include "Engine/StaticMeshActor.h"
 #include "GameFramework/GameModeBase.h"
 
+#include "Camera/CameraComponent.h"
+
 #include "RewindCode.generated.h"
 
 
@@ -25,6 +27,21 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	UGameManager* GameManager;
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void TurnChanged(int32 TurnCount);
+};
+
+UCLASS(BlueprintType, Blueprintable)
+class REWINDCODEPLUGIN_API ARewindPawn : public APawn
+{
+	GENERATED_BODY()
+
+public:
+	ARewindPawn();
+
+	UPROPERTY()
+	UCameraComponent* Camera;
 };
 
 //This should be moved elsewhere
@@ -49,6 +66,10 @@ public:
 	class ARewindPlayerController* PlayerController;
 	UPROPERTY()
 	UEntityAnimator* Animator;
+	ARewindGameMode* Gamemode;
+
+	void StartLevel(int32 Count);
+	int32 LevelCounter = 0;
 
 	//Input
 	EInputStates Buffer;
@@ -72,23 +93,27 @@ public:
 	TArray<APlayerEntity*> Players;
 	TArray<ASuperposition*> Superpositions;
 
-	void EvaluateSubTurn(const struct SubTurnHeader& Header, struct SubTurn& Subturn);
+	void EvaluateSubTurn(struct SubTurnHeader& Header, struct SubTurn& Subturn);
 	void UpdateEntityPosition(struct SubTurn& Subturn, AEntity* Entity, const GridCoord& Delta);
 	bool CheckSuperposition(AEntity* To, AEntity* From);
-	void CollapseTimeline(int32 Collapsed, int32 Current);
-
 	APlayerEntity* SpawnPlayer();
 	ASuperposition* SpawnSuperposition();
 
 	//Rewind
-	TArray<AEntity*> RewindQueue;
-	void DoRewind();
+	AEntity* RewindQueue;
+	void RewindTimeline();
+
+	void RevaluateSuperpositions();
+
+	int32 CollapseQueue;
+	void CollapseTimeline(int32 Target);
 
 	//Grid
 	EntityGrid Grid;
-	int32 BLOCK_SIZE = 300;
+	int32 BlockSize = 10;
 	GridCoord StartGridLocation;
-	int32 HEIGHT_MIN = -5;
+	int32 HEIGHT_MIN = -1;
+	FVector Offset = FVector(-23.61, 350 - 55.75, 124.13 - 5.3);
 
 	void LoadGridFromFile();
 
@@ -146,7 +171,14 @@ public:
 struct Timeline
 {
 	TArray<struct SubTurnHeader> Headers;
-	TArray<struct SubTurn> Subturns; //no need for indices cuz math
+	TArray<struct SubTurn> Subturns;
+
+	AEntity* Rewinder;
+	int32 NumTurns;
+
+	//Final locations
+	TArray<AEntity*> Entities;
+	TArray<GridCoord> Locations;
 };
 
 struct SubTurnHeader
@@ -210,7 +242,7 @@ class REWINDCODEPLUGIN_API UEntityAnimator : public UObject, public FTickableGam
 
 public:
 	UWorld* WorldContext;
-	int32 BlockSize = 300;
+	int32 BlockSize = 10;
 
 	TArray<SubTurn>* Subturns;
 

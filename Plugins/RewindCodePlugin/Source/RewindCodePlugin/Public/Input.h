@@ -78,7 +78,7 @@ public:
 	void OnDebug(bool bDebug) 
 	{ 
 		bIsDebugging = bDebug; 
-		GetPawn()->GetRootComponent()->SetMobility(bDebug ? EComponentMobility::Movable : EComponentMobility::Static);
+		//GetPawn()->GetRootComponent()->SetMobility(bDebug ? EComponentMobility::Movable : EComponentMobility::Static);
 	}
 
 	struct FEnhancedInputActionValueBinding* ScrollValue;
