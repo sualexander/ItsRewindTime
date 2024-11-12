@@ -186,16 +186,12 @@ struct SubTurnHeader
 	APlayerEntity* Player;
 	GridCoord Move;
 
-	TMap<APlayerEntity*, GridCoord> PlayerPositionsAfterTurn;
-	bool bTurnWasMatched;
-
 	SubTurnHeader() {}
 	SubTurnHeader(AEntity* InPlayer, GridCoord& Move) : Move(Move)
 	{
 		Player = StaticCast<APlayerEntity*>(InPlayer);
 	}
 
-	bool bWasPlayersLastTurn;
 };
 
 struct SubTurn
