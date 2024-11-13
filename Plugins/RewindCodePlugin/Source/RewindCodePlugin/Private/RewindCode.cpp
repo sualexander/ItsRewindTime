@@ -161,27 +161,28 @@ void UGameManager::HandleUndoInput()
 
 		--TimelineCounter;
 		Timeline& Timeline = Timelines[TimelineCounter];
-		Timeline.Headers.RemoveAt(Timeline.Headers.Num() - 1, 1, true);
+		Timeline.Headers.RemoveAt(Timeline.Headers.Num() - 1);
 		TurnCounter = Timeline.Subturns.Num() / (TimelineCounter + 1) - 1;
 		Timeline.Subturns.RemoveAt(Timeline.Subturns.Num() - (TimelineCounter + 1), TimelineCounter + 1, true);
 		Timeline.Rewinder = nullptr;
-		
+
 		//Update grid
+		AEntity* Player = Players.Pop(true);
+		Grid.SetAt(Player->GridLocation, nullptr);
+		Player->Destroy();
+			
 		for (int32 i = 0; i < Timeline.Entities.Num(); ++i)
 		{
 			AEntity* Entity = Timeline.Entities[i];
-			if (Grid.QueryAt(Entity->GridLocation) == Entity) {
-				Grid.SetAt(Entity->GridLocation, nullptr);
-			}
+			Grid.SetAt(Entity->GridLocation, nullptr);
 			Entity->GridLocation = Timeline.Locations[i];
 			Grid.SetAt(Entity->GridLocation, Entity);
 
 			Entity->SetActorLocation(FVector(Entity->GridLocation) * BlockSize + Offset);
 		}
 
-		Players.Pop(true)->Destroy();
 		RevaluateSuperpositions();
-		Timelines.RemoveAt(Timelines.Num() - 1, 1, true);
+		Timelines.RemoveAt(Timelines.Num() - 1);
 	}
 	else {
 		LOG("Undoed turn %d", TurnCounter);
@@ -206,7 +207,7 @@ void UGameManager::HandleUndoInput()
 
 		Animator->Start(Timeline.Subturns, EndIndex + TimelineCounter, EndIndex, true);
 
-		Timeline.Headers.RemoveAt(Timeline.Headers.Num() - 1, 1, true);
+		Timeline.Headers.RemoveAt(Timeline.Headers.Num() - 1);
 		Timeline.Subturns.RemoveAt(Timeline.Subturns.Num() - (TimelineCounter + 1), TimelineCounter + 1, true);
 		--TurnCounter;
 	}
@@ -343,6 +344,14 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		Timelines[TimelineCounter].Locations.Emplace(Player->GridLocation);
 	}
 
+	TArray<TPair<AEntity*, int32>> CollapseCandidates;
+	for (int32 n = 0; n < TimelineCounter; ++n)
+	{
+		if (Timelines[n].NumTurns == TurnCounter) {
+			CollapseCandidates.Emplace(Timelines[n].Rewinder, n);
+		}
+	}
+
 	//Evaluate subturns
 	int32 EndIndex = -1;
 	for (int32 i = TimelineCounter; i >= 0; --i)
@@ -356,9 +365,24 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		EvaluateSubTurn(Header, Subturn);
 		Subturn.Durations.Init(0, Subturn.Entities.Num());
 
-		if (EndIndex == -1 && RewindQueue) {
-			EndIndex = (TimelineCounter + 1) * (TurnCounter - 1) + i;//TODO: This is wrong I think
+		//Check collapse
+		for (int32 n = CollapseCandidates.Num() - 1; n >= 0; --n)
+		{
+			AEntity* Entity = CollapseCandidates[n].Key;
+			if (Entity->Flags & SUPER && StaticCast<APlayerEntity*>(Entity)->bInSuperposition == true) continue;
+			AEntity* Query = Grid.QueryAt(Entity->GridLocation + DownVector);
+			if (Query && (Query->Flags & REWIND)) {
+				CollapseCandidates.RemoveAt(n);
+			}
 		}
+
+		if (EndIndex == -1 && RewindQueue) {
+			EndIndex = (TimelineCounter + 1) * (TurnCounter - 1) + i; //TODO: This is wrong I think
+		}
+	}
+
+	if (!RewindQueue && !CollapseCandidates.IsEmpty()) {
+		CollapseQueue = CollapseCandidates[0].Value;
 	}
 
 	//"Un-super" unmerged players
@@ -370,21 +394,6 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		}
 	}
 
-	//Check collapse
-	if (!RewindQueue) {
-		for (int32 i = 0; i < TimelineCounter; ++i)
-		{
-			const struct Timeline& T = Timelines[i];
-			if (T.NumTurns == TurnCounter) {
-				AEntity* Query = Grid.QueryAt(T.Rewinder->GridLocation + DownVector);
-				if (!Query || !(Query->Flags & REWIND)) {
-					CollapseQueue = i;
-					break;
-				}
-			}
-		}
-	}
-
 	//Dispatch animations
 	if (EndIndex == -1) {
 		EndIndex = (TimelineCounter + 1) * (TurnCounter - 1) + TimelineCounter;
@@ -393,44 +402,6 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	int32 StartIndex = (TimelineCounter + 1) * (TurnCounter - 1);
 
 	Animator->Start(Timeline.Subturns, StartIndex, EndIndex, false);
-}
-
-void UGameManager::RewindTimeline()
-{
-	Timelines[TimelineCounter].Rewinder = RewindQueue;
-	Timelines[TimelineCounter].NumTurns = TurnCounter;
-
-	//Do animations
-	//animations should update grid as well
-
-	//Start new timeline
-	++TimelineCounter;
-	Timelines.Emplace();
-	TurnCounter = 0;
-	RewindQueue = nullptr;
-
-	Players.Last()->Flags &= (~CURRENT_PLAYER);
-	SpawnPlayer();
-
-	Superpositions[0]->SetActorHiddenInGame(false);
-	Superpositions[0]->GridLocation = StartGridLocation;
-	Grid.SetAt(StartGridLocation, Superpositions[0]);
-	Superpositions[0]->SetActorLocation((FVector(StartGridLocation) * BlockSize) + Offset);
-
-	Superpositions[0]->Players.Reset();
-	Superpositions[0]->Players.Append(Players);
-
-	for (APlayerEntity* Player : Players)
-	{
-		Player->Flags |= SUPER;
-		Player->bInSuperposition = true;
-		Player->Superposition = Superpositions[0];
-
-		Grid.SetAt(Player->GridLocation, nullptr);
-		Player->GridLocation = StartGridLocation;
-		Player->SetActorLocation((FVector(StartGridLocation) * BlockSize) + Offset);
-		Player->SetActorHiddenInGame(true);
-	}
 }
 
 void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
@@ -645,6 +616,44 @@ bool UGameManager::CheckSuperposition(AEntity* To, AEntity* From)
 	return false;
 }
 
+void UGameManager::RewindTimeline()
+{
+	Timelines[TimelineCounter].Rewinder = RewindQueue;
+	Timelines[TimelineCounter].NumTurns = TurnCounter;
+
+	//Do animations
+	//animations should update grid as well
+
+	//Start new timeline
+	++TimelineCounter;
+	Timelines.Emplace();
+	TurnCounter = 0;
+	RewindQueue = nullptr;
+
+	Players.Last()->Flags &= (~CURRENT_PLAYER);
+	SpawnPlayer();
+
+	Superpositions[0]->SetActorHiddenInGame(false);
+	Superpositions[0]->GridLocation = StartGridLocation;
+	Grid.SetAt(StartGridLocation, Superpositions[0]);
+	Superpositions[0]->SetActorLocation((FVector(StartGridLocation) * BlockSize) + Offset);
+
+	Superpositions[0]->Players.Reset();
+	Superpositions[0]->Players.Append(Players);
+
+	for (APlayerEntity* Player : Players)
+	{
+		Player->Flags |= SUPER;
+		Player->bInSuperposition = true;
+		Player->Superposition = Superpositions[0];
+
+		Grid.SetAt(Player->GridLocation, nullptr);
+		Player->GridLocation = StartGridLocation;
+		Player->SetActorLocation((FVector(StartGridLocation) * BlockSize) + Offset);
+		Player->SetActorHiddenInGame(true);
+	}
+}
+
 void UGameManager::CollapseTimeline(int32 Target)
 {
 	CollapseQueue = -1;
@@ -685,7 +694,9 @@ void UGameManager::CollapseTimeline(int32 Target)
 	Timelines.RemoveAt(Target + 1, Timelines.Num() - Target - 1, true);
 	for (int32 i = Players.Num() - 1; i > Target; --i)
 	{
-		Players.Pop(true)->Destroy();
+		AEntity* Player = Players.Pop(true);
+		Grid.SetAt(Player->GridLocation, nullptr);
+		Player->Destroy();
 	}
 
 	TimelineCounter = Target;
