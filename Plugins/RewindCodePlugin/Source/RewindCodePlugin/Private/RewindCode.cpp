@@ -93,6 +93,8 @@ UGameManager::UGameManager()
 	SpawnSuperposition();
 
 	Timelines.Emplace();
+	CollapseQueue = -1;
+	RewindQueue = nullptr;
 }
 
 void UGameManager::StartLevel(int32 Count)
@@ -165,11 +167,6 @@ void UGameManager::HandleUndoInput()
 		Timeline.Rewinder = nullptr;
 		
 		//Update grid
-		for (ASuperposition* Super : Superpositions)
-		{
-			Grid.SetAt(Super->GridLocation, nullptr);
-			Super->GridLocation = GridCoord(-1, -1, -1);
-		}
 		for (int32 i = 0; i < Timeline.Entities.Num(); ++i)
 		{
 			AEntity* Entity = Timeline.Entities[i];
@@ -183,20 +180,12 @@ void UGameManager::HandleUndoInput()
 		}
 
 		Players.Pop(true)->Destroy();
-
 		RevaluateSuperpositions();
-
 		Timelines.RemoveAt(Timelines.Num() - 1, 1, true);
 	}
 	else {
 		LOG("Undoed turn %d", TurnCounter);
 		Timeline& Timeline = Timelines[TimelineCounter];
-
-		for (ASuperposition* Super : Superpositions)
-		{
-			Grid.SetAt(Super->GridLocation, nullptr);
-			Super->GridLocation = GridCoord(-1, -1, -1);
-		}
 
 		int32 EndIndex = (TimelineCounter + 1) * (TurnCounter - 1);
 		for (int32 i = EndIndex + TimelineCounter; i >= EndIndex; --i)
@@ -276,14 +265,14 @@ void UGameManager::OnTurnEnd()
 	LOG("Ending Turn %d", TurnCounter);
 	if (PlayerController->bIsDebugging) return;
 
-	VisualizeGrid();
+	//VisualizeGrid();
 	InputTimerStart = 0;
 
 	if (RewindQueue) {
 		RewindTimeline();
 		return;
 	}
-	if (CollapseQueue) {
+	if (CollapseQueue != -1) {
 		CollapseTimeline(CollapseQueue);
 		return;
 	}
@@ -368,7 +357,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		Subturn.Durations.Init(0, Subturn.Entities.Num());
 
 		if (EndIndex == -1 && RewindQueue) {
-			EndIndex = (TimelineCounter + 1) * (TurnCounter - 1) + i;
+			EndIndex = (TimelineCounter + 1) * (TurnCounter - 1) + i;//TODO: This is wrong I think
 		}
 	}
 
@@ -383,33 +372,18 @@ void UGameManager::ProcessTurn(EInputStates Input)
 
 	//Check collapse
 	if (!RewindQueue) {
-		for (int32 i = 0; i < TimelineCounter - 1; ++i)
+		for (int32 i = 0; i < TimelineCounter; ++i)
 		{
 			const struct Timeline& T = Timelines[i];
 			if (T.NumTurns == TurnCounter) {
 				AEntity* Query = Grid.QueryAt(T.Rewinder->GridLocation + DownVector);
 				if (!Query || !(Query->Flags & REWIND)) {
-					CollapseQueue = TimelineCounter;
+					CollapseQueue = i;
 					break;
 				}
 			}
 		}
 	}
-
-	//if (TimelineCounter == 0) {
-	//	Timeline.Headers[TurnCounter - 1].bTurnWasMatched = true;
-	//}
-	//else if (TurnCounter - 1 < Timelines[TimelineCounter - 1].Headers.Num()) {
-	//	Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].bTurnWasMatched = true;
-	//	for (int i = 0; i < Players.Num() - 1; i++) {
-	//		if (Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].PlayerPositionsAfterTurn[Players[i]] != Players[i]->GridLocation) {
-	//			Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].bTurnWasMatched = false;
-	//			break;
-	//		}
-	//	}
-
-	//	SLOG((Timelines[TimelineCounter - 1].Headers[TurnCounter - 1].bTurnWasMatched ? "TURN MATCHED" : "TURN FAILED TO MATCH"))
-	//}
 
 	//Dispatch animations
 	if (EndIndex == -1) {
@@ -510,10 +484,10 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 			if (Entity->GridLocation.Z - 1 <= HEIGHT_MIN) {
 				if (i == 0) {
 					//timeline collapse
-					LOG("collapse");
+					//LOG("collapse");
 				}
 				//do stuff like stop rendering, play fade animation etc...
-				LOG("Fell off da world");
+				//LOG("Fell off da world");
 				break;
 			}
 
@@ -650,8 +624,7 @@ void UGameManager::UpdateEntityPosition(SubTurn& Subturn, AEntity* Entity, const
 	}
 	if (Query->Flags & GOAL) {
 		SLOG("YOU WIN!");
-		++LevelCounter;
-		StartLevel(LevelCounter);
+		StartLevel(++LevelCounter);
 	}
 }
 
@@ -674,36 +647,82 @@ bool UGameManager::CheckSuperposition(AEntity* To, AEntity* From)
 
 void UGameManager::CollapseTimeline(int32 Target)
 {
-	return;
+	CollapseQueue = -1;
+
 	//Find when to collapse to
-	int32 Past = Timelines[Target].Subturns.Num() - 1;
-	int32 Current = Timelines[TimelineCounter].Subturns.Num() - 1;
-	for (; Past >= 0; Past -= Target + 1)
+	AEntity* Rewinder = Timelines[Target].Rewinder;
+	int32 Equality = 0;
+
+	GridCoord Past(0, 0, 0);
+	GridCoord Current(0, 0, 0);
+	for (int32 Turn = 0; Turn < Timelines[Target].NumTurns; ++Turn)
 	{
-		SubTurn& Subturn = Timelines[Target].Subturns[Past];
-		GridCoord PastLocation = Subturn.PathIndices.Num() == 1 ? Subturn.Paths.Last() : Subturn.Paths[Subturn.PathIndices[1] - 1];
-
-		Subturn = Timelines[TimelineCounter].Subturns[Current];
-		
-		if (PastLocation == (Subturn.PathIndices.Num() == 1 ? Subturn.Paths.Last() : Subturn.Paths[Subturn.PathIndices[1] - 1])) break;
-	}
-
-	Past += Target + 1;
-
-	LOG("Collapsing to timeline %d, subturn %d", Target, Past);
-
-	for (int32 i = TimelineCounter; i > Target; --i)
-	{
-		for (int32 j = Timelines[i].Headers.Num(); j > 0; --j)
+		for (int32 i = 0; i < Target + 1; ++i)
 		{
-			HandleUndoInput();
+			SubTurn& Subturn = Timelines[Target].Subturns[(Turn * (Target + 1)) + i];
+			int32 Index = Subturn.Entities.Find(Rewinder);
+			if (Index != -1) {
+				Past = Index == Subturn.PathIndices.Num() - 1 ? Subturn.Paths.Last() : Subturn.Paths[Subturn.PathIndices[Index + 1] - 1];
+			}
+		}
+	
+		for (int32 i = 0; i < TimelineCounter + 1; ++i)
+		{
+			SubTurn& Subturn = Timelines[TimelineCounter].Subturns[(Turn * (TimelineCounter + 1)) + i];
+			int32 Index = Subturn.Entities.Find(Rewinder);
+			if (Index != -1) {
+				Current = Index == Subturn.PathIndices.Num() - 1 ? Subturn.Paths.Last() : Subturn.Paths[Subturn.PathIndices[Index + 1] - 1];
+			}
+		}
+
+		if (Past == Current) {
+			Equality = Turn + 1;
 		}
 	}
 
-	for (int32 i = Timelines[Target].Headers.Num() - Past; i > 0; --i)
+	LOG("Collapsing to timeline %d, turn %d", Target, Equality);
+	//Actually collapse
+	Timelines.RemoveAt(Target + 1, Timelines.Num() - Target - 1, true);
+	for (int32 i = Players.Num() - 1; i > Target; --i)
 	{
-		HandleUndoInput();
+		Players.Pop(true)->Destroy();
 	}
+
+	TimelineCounter = Target;
+	Timeline& Timeline = Timelines[TimelineCounter];
+	TurnCounter = Equality;
+
+	for (int32 i = 0; i < Timeline.Entities.Num(); ++i)
+	{
+		AEntity* Entity = Timeline.Entities[i];
+		Grid.SetAt(Entity->GridLocation, nullptr);
+		Entity->GridLocation = Timeline.Locations[i];
+		Grid.SetAt(Entity->GridLocation, Entity);
+	}
+
+	int32 Index = Equality * (TimelineCounter + 1);
+	for (int32 i = Timeline.Subturns.Num() - 1; i >= Index; --i)
+	{
+		SubTurn& Subturn = Timeline.Subturns[i];
+		for (int32 j = 0; j < Subturn.Entities.Num(); ++j)
+		{
+			AEntity* Entity = Subturn.Entities[j];
+			Grid.SetAt(Entity->GridLocation, nullptr);
+			Entity->GridLocation = Subturn.Paths[Subturn.PathIndices[j]];
+			Grid.SetAt(Entity->GridLocation, Entity);
+		}
+	}
+
+	for (AEntity* Entity : Timeline.Entities)
+	{
+		Entity->SetActorLocation(FVector(Entity->GridLocation) * BlockSize + Offset);
+	}
+
+	RevaluateSuperpositions();
+
+	Timeline.Headers.RemoveAt(Equality, Timeline.Headers.Num() - Equality, true);
+	Timeline.Subturns.RemoveAt(Index, Timeline.Subturns.Num() - Index, true);
+	Timeline.Rewinder = nullptr;
 }
 
 APlayerEntity* UGameManager::SpawnPlayer()
@@ -772,6 +791,8 @@ void UGameManager::LoadGridFromFile()
 	case 2:
 		S = TEXT("Grids/Level3.txt");
 		break;
+	case 3:
+		S = TEXT("Grids/Level4.txt");
 	}
 	FString FilePath = FPaths::ProjectContentDir() / S;
 	FString FileContent;
