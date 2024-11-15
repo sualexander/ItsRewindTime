@@ -369,7 +369,6 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		for (int32 n = CollapseCandidates.Num() - 1; n >= 0; --n)
 		{
 			AEntity* Entity = CollapseCandidates[n].Key;
-			if (Entity->Flags & SUPER && StaticCast<APlayerEntity*>(Entity)->bInSuperposition == true) continue;
 			AEntity* Query = Grid.QueryAt(Entity->GridLocation + DownVector);
 			if (Query && (Query->Flags & REWIND)) {
 				CollapseCandidates.RemoveAt(n);
@@ -377,11 +376,23 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		}
 
 		if (EndIndex == -1 && RewindQueue) {
-			EndIndex = (TimelineCounter + 1) * (TurnCounter - 1) + i; //TODO: This is wrong I think
+			EndIndex = (TimelineCounter + 1) * (TurnCounter - 1) + (TimelineCounter - i);
 		}
 	}
 
-	if (!RewindQueue && !CollapseCandidates.IsEmpty()) {
+	//Collapse from premature rewind
+	if (RewindQueue) {
+		for (int32 n = 0; n < TimelineCounter; ++n)
+		{
+			//Not actually sure if it's > or >=
+			if (Timelines[n].Rewinder == RewindQueue && Timelines[n].NumTurns >= TurnCounter) {
+				CollapseQueue = n;
+				RewindQueue = nullptr;
+				break;
+			}
+		}
+	}
+	else if (!CollapseCandidates.IsEmpty()) {
 		CollapseQueue = CollapseCandidates[0].Value;
 	}
 
@@ -581,8 +592,6 @@ void UGameManager::UpdateEntityPosition(SubTurn& Subturn, AEntity* Entity, const
 	Subturn.Paths.Emplace(Entity->GridLocation);
 
 	//Check for rewind tile
-	if (Entity->Flags & SUPER || Entity->IsA<ASuperposition>()) return;
-
 	AEntity* Query = Grid.QueryAt(Entity->GridLocation + DownVector);
 	if (!Query) return;
 	if (!RewindQueue && Query->Flags & REWIND) {
@@ -664,7 +673,8 @@ void UGameManager::CollapseTimeline(int32 Target)
 
 	GridCoord Past(0, 0, 0);
 	GridCoord Current(0, 0, 0);
-	for (int32 Turn = 0; Turn < Timelines[Target].NumTurns; ++Turn)
+	int32 End = FMath::Min(Timelines[Target].NumTurns, TurnCounter);
+	for (int32 Turn = 0; Turn < End; ++Turn)
 	{
 		for (int32 i = 0; i < Target + 1; ++i)
 		{
@@ -686,6 +696,7 @@ void UGameManager::CollapseTimeline(int32 Target)
 
 		if (Past == Current) {
 			Equality = Turn + 1;
+			if (Turn + 1 == End) --Equality;
 		}
 	}
 
@@ -990,10 +1001,13 @@ void UEntityAnimator::Tick(float DeltaTime)
 		if (Animation.PathIndex == -1) continue; //Animation is complete
 
 		//Start animation path
-		if (Animation.PathIndex == -2 && (Animation.StartTime == 0 || CurrentTime - GroupStartTime >= Animation.StartTime)) {
-			Animation.PathIndex = 0;
-			Animation.SubstepTime = CurrentTime;
-		}
+		if (Animation.PathIndex == -2) {
+			if (Animation.StartTime == 0 || CurrentTime - GroupStartTime >= Animation.StartTime) {
+				Animation.PathIndex = 0;
+				Animation.SubstepTime = CurrentTime;
+			} 
+			else continue;
+		}	
 
 		float MoveTime = 0.25;//(Animation.Path[Animation.PathIndex] - Animation.StartLocation).Z < 0 ? VerticalSpeed : HorizontalSpeed;
 		//MoveTime *= Temp->PlayerController->SpeedMultiplier;
