@@ -11,10 +11,6 @@
 #include "RewindCode.generated.h"
 
 
-#define OFFSET FVector(-23.61, 350 - 55.75, 124.13 - 5.3);
-#define BLOCKSIZE 10;
-
-
 enum EInputStates;
 using GridCoord = UE::Math::TIntVector3<int8>;
 
@@ -113,10 +109,10 @@ public:
 
 	//Grid
 	EntityGrid Grid;
-	int32 BlockSize = BLOCKSIZE;
+	int32 BlockSize = 10;
 	GridCoord StartGridLocation;
 	int32 HEIGHT_MIN = -1;
-	FVector Offset = OFFSET;
+	FVector Offset = FVector(-23.61, 350 - 55.75, 124.13 - 5.3);
 
 	void LoadGridFromFile();
 
@@ -157,7 +153,6 @@ class REWINDCODEPLUGIN_API APlayerEntity : public AEntity
 
 public:
 	ASuperposition* Superposition;
-	uint32 PlayerNum;
 	bool bInSuperposition = false;
 };
 
@@ -248,8 +243,7 @@ class REWINDCODEPLUGIN_API UEntityAnimator : public UObject, public FTickableGam
 
 public:
 	UWorld* WorldContext;
-	int32 BlockSize = BLOCKSIZE;
-	FVector Offset = OFFSET;
+	int32 BlockSize = 10;
 
 	TArray<SubTurn>* Subturns;
 
