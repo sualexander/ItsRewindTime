@@ -187,6 +187,9 @@ void UGameManager::HandleUndoInput()
 			RevaluateSuperpositions();
 		}
 
+		for (ASuperposition* s : Superpositions) s->SetActorHiddenInGame(true); //Hide superpositions
+		//Can later be changed to hide superposition entities on a subturn-by-subturn basis
+
 		Animator->Start(Timeline.Subturns, EndIndex + TimelineCounter, EndIndex, true);
 
 		Timeline.Headers.RemoveAt(Timeline.Headers.Num() - 1);
@@ -232,7 +235,7 @@ void UGameManager::RevaluateSuperpositions()
 			Super->GridLocation = Pair.Value[0]->GridLocation;
 			Grid.SetAt(Super->GridLocation, Super);
 			//Super->SetActorLocation(FVector(Super->GridLocation) * BlockSize + Offset);
-			Super->SetActorHiddenInGame(false);
+			//Super->SetActorHiddenInGame(false);
 		}
 		else {
 			Pair.Value[0]->Flags &= ~SUPER;
@@ -629,6 +632,7 @@ void UGameManager::RewindTimeline()
 	Superpositions[0]->GridLocation = StartGridLocation;
 	Grid.SetAt(StartGridLocation, Superpositions[0]);
 	Superpositions[0]->SetActorLocation((FVector(StartGridLocation) * BlockSize) + Offset);
+	Superpositions[0]->SetActorRotation(FRotator::MakeFromEuler(FVector::ForwardVector * 90) + FRotator::MakeFromEuler(FVector::UpVector * 180));
 
 	Superpositions[0]->Players.Empty();
 	Superpositions[0]->Players.Append(Players);
@@ -640,6 +644,7 @@ void UGameManager::RewindTimeline()
 		Player->Superposition = Superpositions[0];
 
 		Grid.SetAt(Player->GridLocation, nullptr);
+		Player->SetActorRotation(FRotator::MakeFromEuler(FVector::ForwardVector * 90) + FRotator::MakeFromEuler(FVector::UpVector * 180));
 		Player->GridLocation = StartGridLocation;
 		Player->SetActorLocation((FVector(StartGridLocation) * BlockSize) + Offset);
 		Player->SetActorHiddenInGame(true);
@@ -1034,6 +1039,25 @@ void UEntityAnimator::Tick(float DeltaTime)
 			if (Animation.StartTime == 0 || CurrentTime - GroupStartTime >= Animation.StartTime) {
 				Animation.PathIndex = 0;
 				Animation.SubstepTime = CurrentTime;
+
+				
+				
+
+				if (i == EndIndex) {
+					SLOG("Starting Anim")
+					SLOGF(i)
+					int32 PathEnd = Animation.PathIndex == Animation.Path.Num() - 1 ? Animation.Path.Num() - 1 : Animation.PathIndex + 1;
+					//Animation.Entity->SetActorRotation(Animation.Path[PathEnd] - Animation.Path[Animation.PathIndex]);
+					FVector TargetDirection = Animation.Path[PathEnd] - Animation.Path[Animation.PathIndex];
+					FRotator NewRotation = FRotator::MakeFromEuler(FVector::ForwardVector * 90) + FRotator::MakeFromEuler(FVector::UpVector * (-90 + FMath::RadiansToDegrees(TargetDirection.HeadingAngle())));
+					Animation.Entity->SetActorRotation(NewRotation);
+				}
+
+				Animation.Entity->SetActorHiddenInGame(false);
+				if (Cast<ASuperposition>(Animation.Entity)) {
+					SLOG("IS SUPER")
+					for (APlayerEntity* p : Cast<ASuperposition>(Animation.Entity)->Players) p->SetActorHiddenInGame(true);
+				}
 			} 
 			else continue;
 		}	
@@ -1044,6 +1068,7 @@ void UEntityAnimator::Tick(float DeltaTime)
 
 		int32 PathEnd = Animation.PathIndex == Animation.Path.Num() - 1 ? Animation.Path.Num() - 1 : Animation.PathIndex + 1;
 		Animation.Entity->SetActorLocation(FMath::Lerp(Animation.Path[Animation.PathIndex], Animation.Path[PathEnd], Alpha));
+		
 
 		if (Animation.Entity->GetActorLocation() == Animation.Path[PathEnd]) {
 			if (Animation.PathIndex == Animation.Path.Num() - 1) {
@@ -1053,6 +1078,7 @@ void UEntityAnimator::Tick(float DeltaTime)
 					SubTurn& Subturn = (*Subturns)[Animation.SubturnIndex];
 					Subturn.Durations[Subturn.Entities.Find(Animation.Entity)] = CurrentTime - Animation.SubstepTime;
 				}
+				SLOG("Entity Anim Ending")
 				APlayerEntity* CurrentPlayer = Cast<APlayerEntity>(Animation.Entity);
 				if (CurrentPlayer && CurrentPlayer->Superposition) {//}&& CurrentPlayer->Superposition->Players[0] == CurrentPlayer) {
 					bool owner = true;
@@ -1066,6 +1092,7 @@ void UEntityAnimator::Tick(float DeltaTime)
 						SLOG("Player owned Super")
 						SLOGF(CurrentPlayer->PlayerNum)
 						CurrentPlayer->Superposition->SetActorLocation(FVector(CurrentPlayer->Superposition->GridLocation) * BlockSize + Offset);
+						CurrentPlayer->Superposition->SetActorRotation(CurrentPlayer->GetActorRotation());
 						CurrentPlayer->Superposition->SetActorHiddenInGame(false);
 					}
 					
