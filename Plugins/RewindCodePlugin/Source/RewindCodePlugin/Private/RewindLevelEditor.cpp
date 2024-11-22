@@ -43,27 +43,18 @@ void SRewindEditor::Construct(const FArguments& InArgs)
 URewindEditorMode::URewindEditorMode()
 {
 	Info = FEditorModeInfo(TEXT("RewindEditorMode"), LOCTEXT("ModeName", "Rewind Editor"), FSlateIcon(), true);
-
-	GridInternal.Init(nullptr, Dimensions.X * Dimensions.Y * Dimensions.Z);
 }
 
 void URewindEditorMode::Enter()
 {
 	UEdMode::Enter();
 
-	if (FSlateApplication::IsInitialized())
-	{
-		FSlateApplication::Get().OnApplicationPreInputKeyDownListener().AddUObject(this, &URewindEditorMode::OnKeyDown);
-	}
+	GridInternal.Init(nullptr, Dimensions.X * Dimensions.Y * Dimensions.Z);
 }
 
 void URewindEditorMode::CreateToolkit()
 {
 	Toolkit = MakeShareable(new FRewindEditorToolkit);
-}
-
-void URewindEditorMode::OnKeyDown(const FKeyEvent& Event)
-{
 }
 
 void URewindEditorMode::Tick(FEditorViewportClient* ViewportClient, float DeltaTime)
@@ -86,14 +77,44 @@ void URewindEditorMode::Tick(FEditorViewportClient* ViewportClient, float DeltaT
 			FVector Start, Direction;
 			SceneView->DeprojectFVector2D(MousePosition, Start, Direction);
 
-			//Trace for geometry first--------------------------------------------------------------------------------------
+			FVector DominantAxis(1, 0, 0);
+			float MaxComponent = FMath::Abs(Direction.X);
+			if (FMath::Abs(Direction.Y) > MaxComponent) {
+				DominantAxis = FVector(0, 1, 0);
+				MaxComponent = FMath::Abs(Direction.Y);
+			}
+			if (FMath::Abs(Direction.Z) > MaxComponent) {
+				DominantAxis = FVector(0, 0, 1);
+			}
+			FVector Temp = FVector(Offset).GetAbs();
+			Temp.Normalize();
+			if (!DominantAxis.Equals(Temp)) {
+				Offset = FIntVector::ZeroValue;
+			}
+
+			//Trace for geometry first-----------------------------------------------------------------------------------------
 			FHitResult OutHit;
-			if (GetWorld()->LineTraceSingleByChannel(OutHit, Start, Start + (Direction * 1000), ECC_Camera)) {
+			if (GetWorld()->LineTraceSingleByChannel(OutHit, Start, Start + (Direction * 10000), ECC_Camera)) {
 				for (AActor* Actor : GridInternal)
 				{
 					if (OutHit.GetActor() == Actor) {
+						FTransform InverseTransform = Grid->GetTransform().Inverse();
+						FVector HitPoint = InverseTransform.TransformPosition(OutHit.Location + (Direction * Actor->GetActorScale3D().X));
+						FVector GridPosition = (HitPoint - (FVector(Dimensions) * 10 * -0.5f)) / 10;
+						HoveredTile.X = FMath::FloorToInt(GridPosition.X);
+						HoveredTile.Y = FMath::FloorToInt(GridPosition.Y);
+						HoveredTile.Z = FMath::FloorToInt(GridPosition.Z);
 
-						LOG("Hit %s", *Actor->GetName());
+						FVector Normal = InverseTransform.TransformVector(OutHit.Normal).GetSafeNormal();
+						if (FMath::Abs(Normal.X) > 0.9f) HoveredTile.X += FMath::Sign(Normal.X);
+						else if (FMath::Abs(Normal.Y) > 0.9f) HoveredTile.Y += FMath::Sign(Normal.Y);
+						else if (FMath::Abs(Normal.Z) > 0.9f) HoveredTile.Z += FMath::Sign(Normal.Z);
+
+						HoveredTile += Offset;
+
+						HoveredTile.X = FMath::Clamp(HoveredTile.X, 0, Dimensions.X - 1);
+						HoveredTile.Y = FMath::Clamp(HoveredTile.Y, 0, Dimensions.Y - 1);
+						HoveredTile.Z = FMath::Clamp(HoveredTile.Z, 0, Dimensions.Z - 1);
 						return;
 					}
 				}
@@ -123,12 +144,15 @@ void URewindEditorMode::Tick(FEditorViewportClient* ViewportClient, float DeltaT
 			float TMax = FMath::Min(FMath::Min(FMath::Max(T1, T2), FMath::Max(T3, T4)), FMath::Max(T5, T6));
 			if (TMax < 0 || TMin > TMax) return;
 
-			//Convert position to grid tile
+			//Convert local position to grid tile
 			FVector HitPoint = Start + Direction * TMin;
 			FVector GridPosition = (HitPoint - MinBound) / BlockSize;
 			HoveredTile.X = FMath::FloorToInt(GridPosition.X);
 			HoveredTile.Y = FMath::FloorToInt(GridPosition.Y);
 			HoveredTile.Z = FMath::FloorToInt(GridPosition.Z);
+
+			HoveredTile += Offset;
+
 			HoveredTile.X = FMath::Clamp(HoveredTile.X, 0, Dimensions.X - 1);
 			HoveredTile.Y = FMath::Clamp(HoveredTile.Y, 0, Dimensions.Y - 1);
 			HoveredTile.Z = FMath::Clamp(HoveredTile.Z, 0, Dimensions.Z - 1);
@@ -229,43 +253,68 @@ void URewindEditorMode::Render(const FSceneView* View, FViewport* Viewport, FPri
 	}
 }
 
-//IMPLEMENT_HIT_PROXY(HGridProxy, HHitProxy);
 bool URewindEditorMode::HandleClick(FEditorViewportClient* ViewportClient, HHitProxy* HitProxy, const FViewportClick& Click)
 {
-	//if (!HitProxy || !HitProxy->IsA(HGridProxy::StaticGetType())) return false;
-	//
-	//HGridProxy* Proxy = StaticCast<HGridProxy*>(HitProxy);
-	//LOG("Selected %s", *Proxy->Grid->GetName());
-
+	if (Click.GetKey() != EKeys::LeftMouseButton) return false;
 	if (!Grid) return false;
 	if (AGridActor* Actor = QueryAt(HoveredTile)) {
-
+		if (ViewportClient->Viewport->KeyState(EKeys::LeftAlt)) {
+			Actor->Destroy();
+			SetAt(HoveredTile, nullptr);
+		}
 	}
-	else {
-		float BlockSize = 10 * Grid->GetActorScale().X;
+	else if (!ViewportClient->Viewport->KeyState(EKeys::LeftAlt)) {
+		float BlockSize = 10;
 		FVector MinBound = FVector(Dimensions) * BlockSize * -0.5;
 		FVector Location = MinBound + (FVector(HoveredTile) * BlockSize) + (FVector(BlockSize) * 0.5);
-		Grid->GetActorTransform().TransformPosition(Location);
-
+		Location = Grid->GetActorTransform().TransformPosition(Location);
 		AGridActor* NewActor = GetWorld()->SpawnActor<AGridActor>(Location, FRotator(0, Grid->GetActorRotation().Yaw, 0));
 
 		NewActor->Type = GridType::Solid;
 		UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Blocks/Cubes/WoodenCube.WoodenCube"));
 		NewActor->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
 		FVector Bounds = BlockMesh->GetBoundingBox().GetSize();
-		NewActor->SetActorScale3D(FVector(BlockSize / Bounds.X));
+		NewActor->SetActorScale3D(FVector((BlockSize * Grid->GetActorScale3D().X) / Bounds.X));
 		
 		SetAt(HoveredTile, NewActor);
 	}
-
 	return true;
 }
 
 bool URewindEditorMode::InputKey(FEditorViewportClient* ViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event)
 {	
 	if (!Viewport->KeyState(EKeys::RightMouseButton) && (Key == EKeys::MouseScrollDown || Key == EKeys::MouseScrollUp)) {
-		LOG("scrollling");
-		return true;
+		if (Event == IE_Pressed && Grid) {
+			FVector CameraForward = ViewportClient->GetViewRotation().Vector();
+			FVector Direction = Grid->GetActorTransform().Inverse().TransformVector(CameraForward);
+			Direction.Normalize();
+
+			int32 DominantAxis = 0;
+			float MaxComponent = FMath::Abs(Direction.X);
+			if (FMath::Abs(Direction.Y) > MaxComponent) {
+				DominantAxis = 1;
+				MaxComponent = FMath::Abs(Direction.Y);
+			}
+			if (FMath::Abs(Direction.Z) > MaxComponent) {
+				DominantAxis = 2;
+			}
+
+			int32 ScrollDirection = Key == EKeys::MouseScrollUp ? 1 : -1;
+			switch (DominantAxis)
+			{
+			case 0:
+				Offset.X += (FMath::Abs(Offset.X + (ScrollDirection * FMath::Sign(Direction.X))) < Dimensions.X) * ScrollDirection * FMath::Sign(Direction.X);
+				break;
+			case 1:
+				Offset.Y += (FMath::Abs(Offset.Y + (ScrollDirection * FMath::Sign(Direction.X))) < Dimensions.Y) * ScrollDirection * FMath::Sign(Direction.Y);
+				break;
+			case 2:
+				Offset.Z += (FMath::Abs(Offset.Z + (ScrollDirection * FMath::Sign(Direction.X))) < Dimensions.Z) * ScrollDirection * FMath::Sign(Direction.Z);
+				break;
+			}
+
+			return true;
+		}	
 	}
 	return UBaseLegacyWidgetEdMode::InputKey(ViewportClient, Viewport, Key, Event);
 }
@@ -299,16 +348,13 @@ AGrid::AGrid()
 {
 	BillboardComponent = CreateEditorOnlyDefaultSubobject<UBillboardComponent>(TEXT("Grid"));
 
-	if (BillboardComponent)
-	{
-		static ConstructorHelpers::FObjectFinder<UTexture2D> Sprite(TEXT("/Game/GridIcon"));
-		BillboardComponent->SetWorldScale3D(FVector(0.1, 0.1, 0.1));
-		BillboardComponent->Sprite = Sprite.Object;
-		BillboardComponent->bIsScreenSizeScaled = true;
-		BillboardComponent->bReceivesDecals = false;
-	}
+	static ConstructorHelpers::FObjectFinder<UTexture2D> Sprite(TEXT("/Game/GridIcon"));
+	BillboardComponent->Sprite = Sprite.Object;
+	BillboardComponent->bIsScreenSizeScaled = false;
+	BillboardComponent->bUseInEditorScaling = false;
+	BillboardComponent->EditorScale = 0.05;
+	BillboardComponent->bReceivesDecals = false;
 }
-
 
 AGridActor* URewindEditorMode::QueryAt(const FIntVector& Location)
 {

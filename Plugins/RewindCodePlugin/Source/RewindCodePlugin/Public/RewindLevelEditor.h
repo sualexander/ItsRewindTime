@@ -46,13 +46,12 @@ public:
 	bool BoxSelect(FBox& InBox, bool InSelect = true) override;
 	bool FrustumSelect(const FConvexVolume& InFrustum, FEditorViewportClient* InViewportClient, bool InSelect) override;
 
-	void OnKeyDown(const FKeyEvent& Event);
-
 	AGrid* Grid;
 	FIntVector Dimensions = FIntVector(6, 6, 4);
 	TArray<AGridActor*> GridInternal;
 
-	FIntVector HoveredTile;
+	FIntVector HoveredTile = FIntVector(-1, -1, -1);
+	FIntVector Offset = FIntVector(0, 0, 0);
 
 	AGridActor* QueryAt(const FIntVector& Location);
 	void SetAt(const FIntVector& Location, AGridActor* Actor);
@@ -87,15 +86,3 @@ public:
 	enum GridType Type;
 
 };
-
-
-
-
-//class HGridProxy : public HHitProxy
-//{
-//	DECLARE_HIT_PROXY();
-//
-//	HGridProxy(UObject* Grid) : HHitProxy(HPP_UI), Grid(Grid) {}
-//
-//	UObject* Grid;
-//};
