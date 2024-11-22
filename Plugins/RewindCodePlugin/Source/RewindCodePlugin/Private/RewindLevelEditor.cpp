@@ -247,7 +247,7 @@ bool URewindEditorMode::HandleClick(FEditorViewportClient* ViewportClient, HHitP
 		FVector Location = MinBound + (FVector(HoveredTile) * BlockSize) + (FVector(BlockSize) * 0.5);
 		Grid->GetActorTransform().TransformPosition(Location);
 
-		AGridActor* NewActor = GetWorld()->SpawnActor<AGridActor>(Location, FRotator::ZeroRotator);
+		AGridActor* NewActor = GetWorld()->SpawnActor<AGridActor>(Location, FRotator(0, Grid->GetActorRotation().Yaw, 0));
 
 		NewActor->Type = GridType::Solid;
 		UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Blocks/Cubes/WoodenCube.WoodenCube"));

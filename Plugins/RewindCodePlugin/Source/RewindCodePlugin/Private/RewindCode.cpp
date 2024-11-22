@@ -8,11 +8,11 @@
 #include "Camera/CameraActor.h"
 
 
-DEFINE_LOG_CATEGORY_STATIC(Rewind, Log, All);
+DEFINE_LOG_CATEGORY_STATIC(RewindGame, Log, All);
 
-#define LOG(Str, ...) UE_LOG(Rewind, Log, TEXT(Str), ##__VA_ARGS__)
-#define WARN(Str, ...) UE_LOG(Rewind, Warning, TEXT(Str), ##__VA_ARGS__);
-#define ERROR(Str, ...) UE_LOG(Rewind, Error, TEXT(Str), ##__VA_ARGS__)
+#define LOG(Str, ...) UE_LOG(RewindGame, Log, TEXT(Str), ##__VA_ARGS__)
+#define WARN(Str, ...) UE_LOG(RewindGame, Warning, TEXT(Str), ##__VA_ARGS__);
+#define ERROR(Str, ...) UE_LOG(RewindGame, Error, TEXT(Str), ##__VA_ARGS__)
 
 #if 1
 #define SLOG(x) GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Yellow, x);
