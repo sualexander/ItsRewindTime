@@ -36,7 +36,9 @@ public class RewindCodePlugin : ModuleRules
 				"Slate",
 				"SlateCore",
 				"EnhancedInput",
-				"InputCore"
+				"InputCore",
+				"UnrealEd",
+				"EditorFramework"
 			}
 			);
 		

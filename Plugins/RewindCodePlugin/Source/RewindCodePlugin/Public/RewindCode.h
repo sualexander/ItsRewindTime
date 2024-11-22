@@ -68,8 +68,7 @@ public:
 	UEntityAnimator* Animator;
 	ARewindGameMode* Gamemode;
 
-	void StartLevel(int32 Count);
-	int32 LevelCounter = 0;
+	FString LevelName;
 
 	//Input
 	EInputStates Buffer;
@@ -133,7 +132,8 @@ enum EntityFlags : uint32
 	REWIND				= 1U << 1,
 	SUPER				= 1U << 2,
 	GOAL				= 1U << 3,
-	CURRENT_PLAYER		= 1U << 4
+	PERSISTENT			= 1U << 4,
+	CURRENT_PLAYER		= 1U << 5
 };
 
 UCLASS()
