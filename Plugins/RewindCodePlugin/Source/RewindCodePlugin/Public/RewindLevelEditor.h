@@ -5,8 +5,9 @@
 #include "CoreMinimal.h"
 #include "Tools/LegacyEdModeWidgetHelpers.h"
 #include "Engine/StaticMeshActor.h"
-
 #include "Components/BillboardComponent.h"
+
+#include "RewindCommon.h"
 
 #include "RewindLevelEditor.generated.h"
 
@@ -15,9 +16,14 @@ class SRewindEditor : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SRewindEditor) {}
-	SLATE_END_ARGS();
+		SLATE_ARGUMENT(UEdMode*, EditorMode)
+	SLATE_END_ARGS()
 
-	void Construct(const FArguments& InArgs);
+	void Construct(const FArguments& Args);
+	URewindEditorMode* EditorMode;
+
+	FReply OnCreateGrid();
+	FReply OnSaveSettings();
 };
 
 class FRewindEditorToolkit : public FModeToolkit
@@ -28,7 +34,7 @@ public:
 };
 
 UCLASS()
-class REWINDCODEPLUGIN_API URewindEditorMode : public UBaseLegacyWidgetEdMode, public ILegacyEdModeSelectInterface
+class REWINDCODEPLUGIN_API URewindEditorMode : public UBaseLegacyWidgetEdMode
 {
 	GENERATED_BODY()
 
@@ -43,18 +49,30 @@ public:
 	bool HandleClick(FEditorViewportClient* ViewportClient, HHitProxy* HitProxy, const FViewportClick& Click) override;
 	bool InputKey(FEditorViewportClient* ViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event) override;
 
-	bool BoxSelect(FBox& InBox, bool InSelect = true) override;
-	bool FrustumSelect(const FConvexVolume& InFrustum, FEditorViewportClient* InViewportClient, bool InSelect) override;
+	TMap<GridType, UStaticMesh*> MeshMap;
+	enum GridType GridType = GridType::Solid;
 
+	FTransform GridTransform;
 	AGrid* Grid;
-	FIntVector Dimensions = FIntVector(6, 6, 4);
+	FIntVector Dimensions = FIntVector(4, 4, 2);
 	TArray<AGridActor*> GridInternal;
 
+	TArray<FVector> Handles;
+	int32 HoveredHandle = -1;
+	void ResizeGrid(bool bIsShrink);
+
+	void UpdateTiles();
+
+	FVector OldAxis;
+	AActor* PrevHit = nullptr;
+
 	FIntVector HoveredTile = FIntVector(-1, -1, -1);
-	FIntVector Offset = FIntVector(0, 0, 0);
+	FIntVector ScrollOffset = FIntVector(0, 0, 0);
 
 	AGridActor* QueryAt(const FIntVector& Location);
 	void SetAt(const FIntVector& Location, AGridActor* Actor);
+
+	void SaveToSettings();
 };
 
 UCLASS()
@@ -68,21 +86,3 @@ public:
 	UBillboardComponent* BillboardComponent;
 };
 
-enum GridType
-{
-	Solid,
-	Transparent,
-	Origin,
-	Goal,
-	Rewind,
-};
-
-UCLASS()
-class REWINDCODEPLUGIN_API AGridActor : public AStaticMeshActor
-{
-	GENERATED_BODY()
-
-public:
-	enum GridType Type;
-
-};

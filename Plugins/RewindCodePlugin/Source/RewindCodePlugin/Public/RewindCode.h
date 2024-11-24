@@ -8,6 +8,7 @@
 
 #include "Camera/CameraComponent.h"
 
+
 #include "RewindCode.generated.h"
 
 
@@ -32,6 +33,7 @@ public:
 	void TurnChanged(int32 TurnCount);
 };
 
+
 UCLASS(BlueprintType, Blueprintable)
 class REWINDCODEPLUGIN_API ARewindPawn : public APawn
 {
@@ -44,7 +46,8 @@ public:
 	UCameraComponent* Camera;
 };
 
-//This should be moved elsewhere
+//-----------------------------------------------------------------------------------
+
 struct EntityGrid
 {
 	int32 WIDTH, LENGTH, HEIGHT;
@@ -68,7 +71,8 @@ public:
 	UEntityAnimator* Animator;
 	ARewindGameMode* Gamemode;
 
-	FString LevelName;
+	//Loading
+	void LoadLevel();
 
 	//Input
 	EInputStates Buffer;
@@ -109,12 +113,13 @@ public:
 
 	//Grid
 	EntityGrid Grid;
-	int32 BlockSize = 10;
+	FTransform Transform;
+	FRotator Rotation;
+	FVector Offset;
+	float BlockSize;
 	GridCoord StartGridLocation;
-	int32 HEIGHT_MIN = -1;
-	FVector Offset = FVector(-23.61, 350 - 55.75, 124.13 - 5.3);
+	int32 HeightMin = -1;
 
-	void LoadGridFromFile();
 
 	//Blueprints
 	UClass* PlayerBlueprint;
@@ -123,6 +128,10 @@ public:
 	//Debug
 	UFUNCTION(BlueprintCallable)
 	void VisualizeGrid();
+
+	void LoadGridFromFile();
+
+	FVector GetWorldLocation(GridCoord GridLocation);
 };
 
 //move base entity stuff into seperate file

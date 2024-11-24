@@ -1,8 +1,10 @@
 // Copyright It's Rewind Time 2024
 
 #include "RewindCode.h"
+#include "RewindCommon.h"
 #include "Input.h"
 
+#include "Engine.h"
 #include "Kismet/GameplayStatics.h"
 
 #include "Camera/CameraActor.h"
@@ -68,10 +70,6 @@ UGameManager::UGameManager()
 	if (!GetWorld()) return;
 
 	WorldContext = GetWorld();
-	LevelName = WorldContext->GetMapName().TrimStartAndEnd();
-	int32 Index;
-	LevelName.FindLastChar('_', Index);
-	LevelName.RightChopInline(Index + 1);
 
 	Animator = CreateDefaultSubobject<UEntityAnimator>(TEXT("Animator"));
 	Animator->WorldContext = WorldContext;
@@ -85,8 +83,73 @@ UGameManager::UGameManager()
 	PlayerBlueprint = PlayerBP.Class;
 	SuperBlueprint = SuperBP.Class;
 
-	//Move everything below here out to somewhere else
-	LoadGridFromFile();
+	LoadLevel();
+}
+
+void UGameManager::LoadLevel()
+{
+	ARewindWorldSettings* Settings = nullptr;
+	Settings = Cast<ARewindWorldSettings>(WorldContext->GetWorldSettings());
+ 	if (!Settings) {
+		ERROR("Failed to load world settings, level loading failed");
+		return;
+	}
+
+	for (TActorIterator<AGridActor> Itr(WorldContext); Itr; ++Itr)
+	{
+		if (*Itr) Itr->SetActorHiddenInGame(true);
+	}
+
+	Grid.WIDTH = Settings->Dimensions.X;
+	Grid.LENGTH = Settings->Dimensions.Y;
+	Grid.HEIGHT = Settings->Dimensions.Z;
+
+	Transform = Settings->Transform;
+	Rotation = FRotator(0, Transform.Rotator().Yaw, 0);
+	Offset = Transform.GetLocation() / 2;
+	BlockSize = Settings->BlockSize;
+	HeightMin = Settings->HeightMin;
+
+	for (int32 i = 0; i < Settings->GridData.Num(); ++i)
+	{
+		int32 Index = i;
+		int32 Z = Index / (Grid.WIDTH * Grid.LENGTH);
+		Index -= (Z * (Grid.WIDTH * Grid.LENGTH));
+		int32 Y = Index / Grid.WIDTH;
+		int32 X = Index % Grid.WIDTH;
+
+		if (Settings->GridData[i] == 0) {
+			Grid.Grid.Emplace(nullptr);
+			continue;
+		}
+
+		AEntity* Entity = WorldContext->SpawnActor<AEntity>(GetWorldLocation(GridCoord(X, Y, Z)), Rotation);
+		Entity->GridLocation = GridCoord(X, Y, Z);
+		Grid.Grid.Emplace(Entity);
+
+		Entity->SetActorScale3D(FVector(BlockSize));
+		UStaticMeshComponent* SMComponent = Entity->GetStaticMeshComponent();
+		SMComponent->SetMobility(EComponentMobility::Movable);
+		switch (StaticCast<GridType>(Settings->GridData[i]))
+		{
+		case GridType::Solid:
+			SMComponent->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Blocks/Cubes/WoodenCube.WoodenCube")));
+			break;
+		case GridType::Transparent:
+			break;
+		case GridType::Origin:
+			break;
+		case GridType::Goal:
+			break;
+		case GridType::Rewind:
+			break;
+		}
+		
+	}
+
+
+
+
 
 	APlayerEntity* Player = SpawnPlayer();
 	Grid.SetAt(StartGridLocation, Player);
@@ -445,7 +508,7 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 			AEntity* Below = Grid.QueryAt(Entity->GridLocation + DownVector);
 			if (Below && !CheckSuperposition(Below, Entity)) break;
 
-			if (Entity->GridLocation.Z - 1 <= HEIGHT_MIN) {
+			if (Entity->GridLocation.Z - 1 <= HeightMin) {
 				if (i == 0) {
 					//timeline collapse
 					//LOG("collapse");
@@ -472,7 +535,7 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 			{
 				AEntity* Below = Grid.QueryAt(Up->GridLocation + DownVector);
 				if (Below) break;
-				if (Up->GridLocation.Z - 1 <= HEIGHT_MIN) {
+				if (Up->GridLocation.Z - 1 <= HeightMin) {
 					//do stuff like stop rendering, play fade animation etc...
 					LOG("Should this even ever print??? Fell off da world");
 					break;
@@ -818,6 +881,11 @@ ASuperposition* UGameManager::SpawnSuperposition()
 	return Superposition;
 }
 
+FVector UGameManager::GetWorldLocation(GridCoord GridLocation)
+{
+	return Transform.TransformPosition(FVector(GridLocation) * BlockSize + Offset + (FVector(BlockSize) / 2));
+}
+
 void UGameManager::VisualizeGrid()
 {
 	FlushDebugStrings(WorldContext);
@@ -841,7 +909,7 @@ void UGameManager::VisualizeGrid()
 
 void UGameManager::LoadGridFromFile()
 {
-	FString FilePath = FPaths::ProjectContentDir() / TEXT("Grids") / LevelName + TEXT(".txt");
+	FString FilePath = FPaths::ProjectContentDir() / TEXT("Grids") / + TEXT(".txt");
 	FString FileContent;
 	if (FFileHelper::LoadFileToString(FileContent, *FilePath))
 	{
