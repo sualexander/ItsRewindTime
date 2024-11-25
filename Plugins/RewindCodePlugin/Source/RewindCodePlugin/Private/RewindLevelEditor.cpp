@@ -25,21 +25,58 @@ void SRewindEditor::Construct(const FArguments& Args)
 		[
 			SNew(SVerticalBox)
 				+ SVerticalBox::Slot()
+				.HAlign(HAlign_Center)
+				.AutoHeight()
+				.Padding(16)
+				[
+					SNew(STextBlock)
+						.Text(FText::FromString(TEXT("REWIND LEVEL EDITOR :)")))
+				]
+				+ SVerticalBox::Slot()
+				.HAlign(HAlign_Center)
+				.AutoHeight()
+				.Padding(8)
 				[
 					SNew(SButton)
 						.OnClicked(this, &SRewindEditor::OnCreateGrid)
+						.ContentPadding(8)
 						[
 							SNew(STextBlock)
 								.Text(FText::FromString(TEXT("Create Grid")))
 						]
 				]
 				+ SVerticalBox::Slot()
+				.HAlign(HAlign_Center)
+				.AutoHeight()
+				.Padding(8)
 				[
 					SNew(SButton)
 						.OnClicked(this, &SRewindEditor::OnSaveSettings)
+						.ContentPadding(8)
 						[
 							SNew(STextBlock)
 								.Text(FText::FromString(TEXT("Save Level")))
+						]
+				]
+				+ SVerticalBox::Slot()
+				.HAlign(HAlign_Center)
+				.AutoHeight()
+				.Padding(8)
+				[
+					SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.HAlign(HAlign_Left)
+						.AutoWidth()
+						[
+							SNew(STextBlock)
+								.Text(FText::FromString(TEXT("Block Type: ")))
+						]
+						+ SHorizontalBox::Slot()
+						.HAlign(HAlign_Right)
+						.AutoWidth()
+						[
+							SAssignNew(BlockText, STextBlock)
+								.Text(FText::FromString(TEXT("SOLID")))
 						]
 				]
 		];
@@ -49,7 +86,7 @@ void FRewindEditorToolkit::Init(const TSharedPtr<IToolkitHost>& InitToolkitHost,
 {
 	SAssignNew(ToolkitWidget, SBorder)
  		[
-			SNew(SRewindEditor)
+			SAssignNew(MainWidget, SRewindEditor)
 				.EditorMode(InOwningMode.Get())
  		];
 
@@ -75,6 +112,7 @@ FReply SRewindEditor::OnCreateGrid()
 	}
 
 	EditorMode->Grid = EditorMode->GetWorld()->SpawnActor<AGrid>(EditorMode->GridTransform.GetLocation(), FRotator::ZeroRotator);
+	EditorMode->Grid->SetActorScale3D(FVector(10));
 	EditorMode->GridTransform.SetRotation(FQuat::Identity);
 	EditorMode->GridTransform.SetScale3D(FVector(1));
 
@@ -97,18 +135,17 @@ URewindEditorMode::URewindEditorMode()
 {
 	Info = FEditorModeInfo(TEXT("RewindEditorMode"), LOCTEXT("ModeName", "Rewind Editor"), FSlateIcon(), true);
 
-	TMap<enum GridType, FString> Map{
-		{ GridType::Solid, TEXT("/Game/Blocks/Cubes/WoodenCube.WoodenCube") },
-		{ GridType::Origin, TEXT("/Game/Blocks/Cubes/Origin.Origin") },
-		{ GridType::Goal, TEXT("/Game/Blocks/Cubes/Goal.Goal") },
-		{ GridType::Rewind, TEXT("/Game/Blocks/Cubes/Rewind.Rewind") },
-		{ GridType::Transparent, TEXT("/Game/Blocks/Cubes/Transparent.Transparent") }
-	};
-
-	for (const auto& Pair : Map)
+	for (const auto& Pair : MeshPaths)
 	{
 		MeshMap.Emplace(Pair.Key, LoadObject<UStaticMesh>(nullptr, *Pair.Value));
 	}
+}
+
+void URewindEditorMode::Exit()
+{
+	SaveToSettings();
+
+	UEdMode::Exit();
 }
 
 void URewindEditorMode::Enter()
@@ -141,24 +178,20 @@ void URewindEditorMode::Enter()
 		MaxBound = MaxBound.ComponentMax(Location);
 	}
 
-	FVector Origin, Extents;
-	GridActors[0]->GetActorBounds(false, Origin, Extents);
-	const double BlockSize = 10;
+	FVector MeshSize = GridActors[0]->GetStaticMeshComponent()->GetStaticMesh()->GetBoundingBox().GetSize();
+	MinBound -= MeshSize / 2;
+	MaxBound += MeshSize / 2;
 
-	//I hv no fucking clue...
-	MinBound -= FVector(BlockSize * BlockSize);
-	MaxBound += FVector(BlockSize * BlockSize);
-
-	FVector TotalSize = ((MaxBound - MinBound) / (BlockSize * BlockSize * 2));
+	FVector TotalSize = ((MaxBound - MinBound) / MeshSize);
 	Dimensions = FIntVector(FMath::RoundToInt(TotalSize.X), FMath::RoundToInt(TotalSize.Y), FMath::RoundToInt(TotalSize.Z));
 
 	//Initialize variables
 	GridInternal.Init(nullptr, Dimensions.X * Dimensions.Y * Dimensions.Z);
 
-	FVector CenterOffset = MinBound + (MaxBound - MinBound) * 0.5;
+	FVector CenterOffset = MinBound + ((MaxBound - MinBound) / 2);
 	FTransform NewTransform = Transform;
 	NewTransform.AddToTranslation(Transform.TransformVector(CenterOffset));
-	NewTransform.SetScale3D(Transform.GetScale3D() * BlockSize * 2);
+	NewTransform.SetScale3D(Transform.GetScale3D() * MeshSize);
 
 	for (TActorIterator<AGrid> Itr(GetWorld()); Itr; ++Itr)
 	{
@@ -172,7 +205,7 @@ void URewindEditorMode::Enter()
 	//Fill array
 	for (int32 i = 0; i < GridActors.Num(); ++i)
 	{
-		FVector Unquantized = (Locals[i] - MinBound) / (BlockSize * BlockSize * 2);
+		FVector Unquantized = (Locals[i] - MinBound) / MeshSize;
 		FIntVector GridLocation(FMath::FloorToInt(Unquantized.X), FMath::FloorToInt(Unquantized.Y), FMath::FloorToInt(Unquantized.Z));
 
 		GridLocation.X = FMath::Clamp(GridLocation.X, 0, Dimensions.X - 1);
@@ -180,12 +213,6 @@ void URewindEditorMode::Enter()
 		GridLocation.Z = FMath::Clamp(GridLocation.Z, 0, Dimensions.Z - 1);
 		SetAt(GridLocation, GridActors[i]);
 	}
-
-}
-
-void URewindEditorMode::CreateToolkit()
-{
-	Toolkit = MakeShareable(new FRewindEditorToolkit);
 }
 
 void URewindEditorMode::Tick(FEditorViewportClient* ViewportClient, float DeltaTime)
@@ -215,15 +242,14 @@ void URewindEditorMode::Tick(FEditorViewportClient* ViewportClient, float DeltaT
 				FMatrix ProjectionMatrix = SceneView->ViewMatrices.GetViewProjectionMatrix();
 				FIntPoint ViewportSize = ViewportClient->Viewport->GetSizeXY();
 
-				const double BlockSize = 10;
-				const FVector Bounds = FVector(Dimensions) * BlockSize * 0.5;
-				const double HOffset = BlockSize * 1.5;
+				const FVector Bounds = FVector(Dimensions) / 2;
+				const double HOffset = 1;
 				Handles = { FVector(Bounds.X + HOffset, 0, 0), FVector(-Bounds.X - HOffset, 0, 0),
 							FVector(0, Bounds.Y + HOffset, 0), FVector(0, -Bounds.Y - HOffset, 0),
 							FVector(0, 0, Bounds.Z + HOffset), FVector(0, 0, -Bounds.Z - HOffset)
 				};
 
-				const double HandleRadius = BlockSize * Grid->GetActorScale3D().X;
+				const double HandleRadius = Grid->GetActorScale3D().X;
 				HoveredHandle = -1;
 				for (int32 i = 0; i < 6; ++i)
 				{
@@ -238,7 +264,7 @@ void URewindEditorMode::Tick(FEditorViewportClient* ViewportClient, float DeltaT
 
 					//Convert to viewport coordinates
 					const double DistanceSquared = FVector2D::DistSquared(
-						FVector2D((ScreenPosition.X + 1) * ViewportSize.X * 0.5, (1 - ScreenPosition.Y) * ViewportSize.Y * 0.5),
+						FVector2D((ScreenPosition.X + 1) * ViewportSize.X / 2, (1 - ScreenPosition.Y) * ViewportSize.Y / 2),
 						FVector2D(MousePosition));
 					if (DistanceSquared < HandleRadius * HandleRadius) {
 						HoveredHandle = i;
@@ -272,15 +298,15 @@ void URewindEditorMode::Tick(FEditorViewportClient* ViewportClient, float DeltaT
 					if (OutHit.GetActor() == Actor) {
 						FTransform InverseTransform = Grid->GetTransform().Inverse();
 						FVector HitPoint = InverseTransform.TransformPosition(OutHit.Location + (Direction * Actor->GetActorScale3D().X));
-						FVector GridPosition = (HitPoint - (FVector(Dimensions) * 10 * -0.5f)) / 10;
+						FVector GridPosition(HitPoint - (FVector(Dimensions) / -2));
 						HoveredTile.X = FMath::FloorToInt(GridPosition.X);
 						HoveredTile.Y = FMath::FloorToInt(GridPosition.Y);
 						HoveredTile.Z = FMath::FloorToInt(GridPosition.Z);
 
 						FVector Normal = InverseTransform.TransformVector(OutHit.Normal).GetSafeNormal();
-						if (FMath::Abs(Normal.X) > 0.9f) HoveredTile.X += FMath::Sign(Normal.X);
-						else if (FMath::Abs(Normal.Y) > 0.9f) HoveredTile.Y += FMath::Sign(Normal.Y);
-						else if (FMath::Abs(Normal.Z) > 0.9f) HoveredTile.Z += FMath::Sign(Normal.Z);
+						if (FMath::Abs(Normal.X) > 0.9) HoveredTile.X += FMath::Sign(Normal.X);
+						else if (FMath::Abs(Normal.Y) > 0.9) HoveredTile.Y += FMath::Sign(Normal.Y);
+						else if (FMath::Abs(Normal.Z) > 0.9) HoveredTile.Z += FMath::Sign(Normal.Z);
 
 						if (Actor != PrevHit) {
 							PrevHit = Actor;
@@ -304,9 +330,8 @@ void URewindEditorMode::Tick(FEditorViewportClient* ViewportClient, float DeltaT
 			Direction.Normalize();
 
 			//Slab method
-			const double BlockSize = 10;
-			const FVector MinBound = FVector(Dimensions) * BlockSize * -0.5f;
-			const FVector MaxBound = FVector(Dimensions) * BlockSize * 0.5f;
+			const FVector MinBound = FVector(Dimensions) / -2;
+			const FVector MaxBound = FVector(Dimensions) / 2;
 
 			FVector InverseDirection(1 / Direction.X, 1 / Direction.Y, 1 / Direction.Z);
 			float T1 = (MinBound.X - Start.X) * InverseDirection.X;
@@ -323,7 +348,7 @@ void URewindEditorMode::Tick(FEditorViewportClient* ViewportClient, float DeltaT
 
 			//Convert local position to grid tile
 			FVector HitPoint = Start + Direction * TMin;
-			FVector GridPosition = (HitPoint - MinBound) / BlockSize;
+			FVector GridPosition = (HitPoint - MinBound);
 			HoveredTile.X = FMath::FloorToInt(GridPosition.X);
 			HoveredTile.Y = FMath::FloorToInt(GridPosition.Y);
 			HoveredTile.Z = FMath::FloorToInt(GridPosition.Z);
@@ -347,9 +372,9 @@ void URewindEditorMode::Render(const FSceneView* View, FViewport* Viewport, FPri
 			const FLinearColor GridColor(0, 0.25, 1, 0.1);
 
 			const FIntVector NumLines(Dimensions.X + 1, Dimensions.Y + 1, Dimensions.Z + 1);
-			const double BlockSize = 10 * Grid->GetActorScale().X;
-			const FVector MinBound = FVector(Dimensions) * BlockSize * -0.5;
-			const FVector MaxBound = FVector(Dimensions) * BlockSize * 0.5;
+			const double ScaledBlockSize = Grid->GetActorScale().X;
+			const FVector MinBound = FVector(Dimensions) * ScaledBlockSize / -2;
+			const FVector MaxBound = FVector(Dimensions) * ScaledBlockSize / 2;
 
 			const FQuat Rotor(FRotator(0, Grid->GetActorRotation().Yaw, 0));
 			const FVector Location = Grid->GetActorLocation();
@@ -357,7 +382,7 @@ void URewindEditorMode::Render(const FSceneView* View, FViewport* Viewport, FPri
 			{
 				for (int32 Y = 0; Y < NumLines.Y; ++Y)
 				{
-					FVector Start = FVector(MinBound.X + (X * BlockSize), MinBound.Y + (Y * BlockSize), MinBound.Z);
+					FVector Start = FVector(MinBound.X + (X * ScaledBlockSize), MinBound.Y + (Y * ScaledBlockSize), MinBound.Z);
 					FVector End = Start + FVector(0, 0, MaxBound.Z - MinBound.Z);
 
 					Start = Rotor.RotateVector(Start) + Location;
@@ -367,7 +392,7 @@ void URewindEditorMode::Render(const FSceneView* View, FViewport* Viewport, FPri
 
 				for (int32 Z = 0; Z < NumLines.Z; ++Z)
 				{
-					FVector Start = FVector(MinBound.X + (X * BlockSize), MinBound.Y, MinBound.Z + (Z * BlockSize));
+					FVector Start = FVector(MinBound.X + (X * ScaledBlockSize), MinBound.Y, MinBound.Z + (Z * ScaledBlockSize));
 					FVector End = Start + FVector(0, MaxBound.Y - MinBound.Y, 0);
 
 					Start = Rotor.RotateVector(Start) + Location;
@@ -380,7 +405,7 @@ void URewindEditorMode::Render(const FSceneView* View, FViewport* Viewport, FPri
 			{
 				for (int32 Z = 0; Z < NumLines.Z; ++Z)
 				{
-					FVector Start = FVector(MinBound.X, MinBound.Y + (Y * BlockSize), MinBound.Z + (Z * BlockSize));
+					FVector Start = FVector(MinBound.X, MinBound.Y + (Y * ScaledBlockSize), MinBound.Z + (Z * ScaledBlockSize));
 					FVector End = Start + FVector(MaxBound.X - MinBound.X, 0, 0);
 
 					Start = Rotor.RotateVector(Start) + Location;
@@ -391,8 +416,8 @@ void URewindEditorMode::Render(const FSceneView* View, FViewport* Viewport, FPri
 
 			//-----------------------------------------------------------------------------------------------
 			if (HoveredTile != FIntVector(-1, -1, -1)) {
-				FVector CellMin = MinBound + FVector(HoveredTile) * BlockSize;
-				FVector CellMax = CellMin + FVector(BlockSize);
+				FVector CellMin = MinBound + FVector(HoveredTile) * ScaledBlockSize;
+				FVector CellMax = CellMin + FVector(ScaledBlockSize);
 
 				GridTransform.SetScale3D(FVector::OneVector);
 
@@ -406,7 +431,7 @@ void URewindEditorMode::Render(const FSceneView* View, FViewport* Viewport, FPri
 				Vertices[6] = GridTransform.TransformPosition(FVector(CellMin.X, CellMax.Y, CellMax.Z));
 				Vertices[7] = GridTransform.TransformPosition(FVector(CellMax.X, CellMax.Y, CellMax.Z));
 
-				const FLinearColor HighlightColor(1.0, 0.15, 0.5, 0.5f);
+				const FLinearColor HighlightColor(1.0, 0.15, 0.5, 0.5);
 				const float HighlightThickness = 0.3;
 
 				//Bottom face
@@ -452,9 +477,8 @@ bool URewindEditorMode::HandleClick(FEditorViewportClient* ViewportClient, HHitP
 			}
 		}
 		else if (!ViewportClient->Viewport->KeyState(EKeys::LeftAlt)) {
-			double BlockSize = 10;
-			FVector MinBound = FVector(Dimensions) * BlockSize * -0.5;
-			FVector Location = MinBound + (FVector(HoveredTile) * BlockSize) + (FVector(BlockSize) * 0.5);
+			FVector MinBound = FVector(Dimensions) / -2;
+			FVector Location = MinBound + (FVector(HoveredTile)) + 0.5;
 			Location = Grid->GetActorTransform().TransformPosition(Location);
 			AGridActor* NewActor = GetWorld()->SpawnActor<AGridActor>(Location, FRotator(0, Grid->GetActorRotation().Yaw, 0));
 
@@ -462,7 +486,7 @@ bool URewindEditorMode::HandleClick(FEditorViewportClient* ViewportClient, HHitP
 			UStaticMesh* BlockMesh = *MeshMap.Find(GridType);
 			NewActor->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
 			FVector Bounds = BlockMesh->GetBoundingBox().GetSize();
-			NewActor->SetActorScale3D(FVector((BlockSize * Grid->GetActorScale3D().X) / Bounds.X));
+			NewActor->SetActorScale3D(Grid->GetActorScale3D() / Bounds);
 
 			SetAt(HoveredTile, NewActor);
 		}
@@ -481,6 +505,9 @@ bool URewindEditorMode::InputKey(FEditorViewportClient* ViewportClient, FViewpor
 				Temp += ScrollDirection;
 				Temp = FMath::Clamp(Temp, 1, 5);
 				GridType = StaticCast<enum GridType>(Temp);
+
+				FText Block = FText::FromString(UEnum::GetValueAsString<enum GridType>(GridType).RightChop(10).ToUpper());
+				StaticCast<FRewindEditorToolkit*>(GetToolkit().Pin().Get())->MainWidget->BlockText->SetText(Block);
 			}
 			else {
 				FVector CameraForward = ViewportClient->GetViewRotation().Vector();
@@ -567,10 +594,6 @@ void URewindEditorMode::ResizeGrid(bool bIsShrink)
 	}
 	if (NewDimensions == Dimensions) return;
 
-	auto Flatten = [](const FIntVector& Dimensions, int32 X, int32 Y, int32 Z) {
-		return (Z * Dimensions.X * Dimensions.Y) + (Y * Dimensions.X) + X;
-		};
-
 	TArray<AGridActor*> Temp;
 	Temp.Init(nullptr, NewDimensions.X * NewDimensions.Y * NewDimensions.Z);
 	for (int32 Z = 0; Z < Dimensions.Z; ++Z)
@@ -579,7 +602,7 @@ void URewindEditorMode::ResizeGrid(bool bIsShrink)
 		{
 			for (int32 X = 0; X < Dimensions.X; ++X)
 			{
-				int32 OldIndex = Flatten(Dimensions, X, Y, Z);
+				int32 OldIndex = (Z * Dimensions.X * Dimensions.Y) + (Y * Dimensions.X) + X;
 				int32 NewX = X + Offset.X;
 				int32 NewY = Y + Offset.Y;
 				int32 NewZ = Z + Offset.Z;
@@ -588,13 +611,12 @@ void URewindEditorMode::ResizeGrid(bool bIsShrink)
 					NewY >= 0 && NewY < NewDimensions.Y &&
 					NewZ >= 0 && NewZ < NewDimensions.Z)
 				{
-					int32 NewIndex = Flatten(NewDimensions, NewX, NewY, NewZ);
+					int32 NewIndex = (NewZ * NewDimensions.X * NewDimensions.Y) + (NewY * NewDimensions.X) + NewX;
 					Temp[NewIndex] = GridInternal[OldIndex];
 
 					if (GridInternal[OldIndex]) {
-						double BlockSize = 10;
-						FVector MinBound = FVector(NewDimensions) * BlockSize * -0.5;
-						FVector Location = MinBound + (FVector(NewX, NewY, NewZ) * BlockSize) + (FVector(BlockSize * 0.5));
+						FVector MinBound = FVector(NewDimensions) / -2;
+						FVector Location = MinBound + (FVector(NewX, NewY, NewZ)) + 0.5;
 						Location = Grid->GetActorTransform().TransformPosition(Location);
 						GridInternal[OldIndex]->SetActorLocation(Location);
 					}
@@ -619,16 +641,15 @@ void URewindEditorMode::UpdateTiles()
 			for (int32 X = 0; X < Dimensions.X; ++X)
 			{
 				if (AGridActor* Actor = GridInternal[(Z * Dimensions.X * Dimensions.Y) + (Y * Dimensions.X) + X]) {
-					double BlockSize = 10;
-					FVector MinBound = FVector(Dimensions) * BlockSize * -0.5;
-					FVector Location = MinBound + (FVector(X, Y, Z) * BlockSize) + (FVector(BlockSize) * 0.5);
+					FVector MinBound = FVector(Dimensions) / -2;
+					FVector Location = MinBound + (FVector(X, Y, Z)) + 0.5;
 					Location = GridTransform.TransformPosition(Location);
 
 					Actor->SetActorLocation(Location);
 					Actor->SetActorRotation(FRotator(0, Grid->GetActorRotation().Yaw, 0));
 
 					FVector Bounds = Actor->GetStaticMeshComponent()->GetStaticMesh()->GetBoundingBox().GetSize();
-					Actor->SetActorScale3D(FVector((BlockSize * Grid->GetActorScale3D().X) / Bounds.X));
+					Actor->SetActorScale3D(FVector((Grid->GetActorScale3D().X) / Bounds.X));
 				}
 			}
 		}
@@ -663,20 +684,32 @@ void URewindEditorMode::SetAt(const FIntVector& Location, AGridActor* Actor)
 
 void URewindEditorMode::SaveToSettings()
 {
+	if (!Grid) return;
 	if (ARewindWorldSettings* Settings = Cast<ARewindWorldSettings>(GetWorld()->GetWorldSettings())) {
 		Settings->Modify();
 
+		FVector Scale;
 		TArray<uint8>& Data = Settings->GridData;
-		Data.Empty();
-		for (AGridActor* Actor : GridInternal)
-		{
-			if (Actor) Data.Emplace(StaticCast<uint8>(Actor->Type));
-			else Data.Emplace(0);
+
+		FIntVector NewDimensions = Dimensions + FIntVector(2, 2, 2);
+		Data.Init(0, NewDimensions.X * NewDimensions.Y * NewDimensions.Z);
+		for (int32 Z = 0; Z < Dimensions.Z; Z++) {
+			for (int32 Y = 0; Y < Dimensions.Y; Y++) {
+				for (int32 X = 0; X < Dimensions.X; X++) {
+					int32 OldIndex = X + Y * Dimensions.X + Z * Dimensions.X * Dimensions.Y;
+					int32 NewIndex = (X + 1) + (Y + 1) * NewDimensions.X + (Z + 1 ) * NewDimensions.X * NewDimensions.Y;
+
+					if (GridInternal[OldIndex]) {
+						Data[NewIndex] = StaticCast<uint8>(GridInternal[OldIndex]->Type);
+						Scale = GridInternal[OldIndex]->GetStaticMeshComponent()->GetStaticMesh()->GetBoundingBox().GetSize();
+					}
+				}
+			}
 		}
 
-		Settings->Dimensions = Dimensions;
-		Settings->Transform = Grid->GetActorTransform();
-		Settings->BlockSize = 10 * Grid->GetActorScale3D().X;
+		Settings->Dimensions = NewDimensions;
+		Settings->Transform = Grid->GetActorTransform(); 
+		Settings->BlockScale = Grid->GetActorScale3D() / Scale;
 
 		Settings->MarkPackageDirty();
 	}
@@ -692,6 +725,6 @@ AGrid::AGrid()
 	BillboardComponent->Sprite = Sprite.Object;
 	BillboardComponent->bIsScreenSizeScaled = false;
 	BillboardComponent->bUseInEditorScaling = false;
-	BillboardComponent->EditorScale = 0.05;
+	BillboardComponent->EditorScale = 0.005;
 	BillboardComponent->bReceivesDecals = false;
 }

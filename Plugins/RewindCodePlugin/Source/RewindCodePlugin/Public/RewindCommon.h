@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Engine/StaticMeshActor.h"
 
 #include "RewindCommon.generated.h"
 
@@ -16,6 +17,14 @@ enum class GridType : uint8
 	Origin = 3,
 	Goal = 4,
 	Rewind = 5
+};
+
+static const TMap<GridType, FString> MeshPaths{
+	{ GridType::Solid, TEXT("/Game/Entities/Solid.Solid") },
+	{ GridType::Origin, TEXT("/Game/Entities/Origin.Origin") },
+	{ GridType::Goal, TEXT("/Game/Entities/Goal.Goal") },
+	{ GridType::Rewind, TEXT("/Game/Entities/Rewind.Rewind") },
+	{ GridType::Transparent, TEXT("/Game/Entities/Transparent.Transparent") }
 };
 
 UCLASS()
@@ -42,7 +51,7 @@ public:
 	UPROPERTY()
 	FTransform Transform;
 	UPROPERTY()
-	float BlockSize;
+	FVector BlockScale;
 	UPROPERTY()
 	TArray<uint8> GridData;
 };

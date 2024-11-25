@@ -22,6 +22,8 @@ public:
 	void Construct(const FArguments& Args);
 	URewindEditorMode* EditorMode;
 
+	TSharedPtr<STextBlock> BlockText;
+
 	FReply OnCreateGrid();
 	FReply OnSaveSettings();
 };
@@ -31,6 +33,8 @@ class FRewindEditorToolkit : public FModeToolkit
 public:
 	void Init(const TSharedPtr<IToolkitHost>& InitToolkitHost, TWeakObjectPtr<UEdMode> InOwningMode) override;
 	void InvokeUI() override;
+
+	TSharedPtr<SRewindEditor> MainWidget;
 };
 
 UCLASS()
@@ -42,7 +46,8 @@ public:
 	URewindEditorMode();
 
 	void Enter() override;
-	void CreateToolkit() override;
+	void Exit() override;
+	void CreateToolkit() override { Toolkit = MakeShareable(new FRewindEditorToolkit); }
 
 	void Tick(FEditorViewportClient* ViewportClient, float DeltaTime) override;
 	void Render(const FSceneView* View, FViewport* Viewport, FPrimitiveDrawInterface* PDI) override;
@@ -52,15 +57,14 @@ public:
 	TMap<GridType, UStaticMesh*> MeshMap;
 	enum GridType GridType = GridType::Solid;
 
-	FTransform GridTransform;
 	AGrid* Grid;
+	FTransform GridTransform;
 	FIntVector Dimensions = FIntVector(4, 4, 2);
 	TArray<AGridActor*> GridInternal;
 
 	TArray<FVector> Handles;
 	int32 HoveredHandle = -1;
 	void ResizeGrid(bool bIsShrink);
-
 	void UpdateTiles();
 
 	FVector OldAxis;

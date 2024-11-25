@@ -100,23 +100,22 @@ void UGameManager::LoadLevel()
 		if (*Itr) Itr->SetActorHiddenInGame(true);
 	}
 
-	Grid.WIDTH = Settings->Dimensions.X;
-	Grid.LENGTH = Settings->Dimensions.Y;
-	Grid.HEIGHT = Settings->Dimensions.Z;
-
+	Grid.Dimensions = GridCoord(Settings->Dimensions);
+	Dimensions = FVector(Settings->Dimensions);
 	Transform = Settings->Transform;
-	Rotation = FRotator(0, Transform.Rotator().Yaw, 0);
-	Offset = Transform.GetLocation() / 2;
-	BlockSize = Settings->BlockSize;
 	HeightMin = Settings->HeightMin;
+	Rotation = FRotator(0, Transform.Rotator().Yaw, 0);
+
+	Animator->Transform = Transform;
+	Animator->Offset = Dimensions / -2 + 0.5;
 
 	for (int32 i = 0; i < Settings->GridData.Num(); ++i)
 	{
 		int32 Index = i;
-		int32 Z = Index / (Grid.WIDTH * Grid.LENGTH);
-		Index -= (Z * (Grid.WIDTH * Grid.LENGTH));
-		int32 Y = Index / Grid.WIDTH;
-		int32 X = Index % Grid.WIDTH;
+		int32 Z = Index / (Grid.Dimensions.X * Grid.Dimensions.Y);
+		Index -= (Z * (Grid.Dimensions.X * Grid.Dimensions.Y));
+		int32 Y = Index / Grid.Dimensions.X;
+		int32 X = Index % Grid.Dimensions.X;
 
 		if (Settings->GridData[i] == 0) {
 			Grid.Grid.Emplace(nullptr);
@@ -127,29 +126,32 @@ void UGameManager::LoadLevel()
 		Entity->GridLocation = GridCoord(X, Y, Z);
 		Grid.Grid.Emplace(Entity);
 
-		Entity->SetActorScale3D(FVector(BlockSize));
+		Entity->SetActorScale3D(Settings->BlockScale);
 		UStaticMeshComponent* SMComponent = Entity->GetStaticMeshComponent();
 		SMComponent->SetMobility(EComponentMobility::Movable);
-		switch (StaticCast<GridType>(Settings->GridData[i]))
+
+		GridType Type = StaticCast<GridType>(Settings->GridData[i]);
+		const TCHAR* Path = **MeshPaths.Find(Type);
+		SMComponent->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, Path));
+		switch (Type)
 		{
 		case GridType::Solid:
-			SMComponent->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Blocks/Cubes/WoodenCube.WoodenCube")));
 			break;
 		case GridType::Transparent:
 			break;
 		case GridType::Origin:
+			StartGridLocation = GridCoord(X, Y, Z + 1);
 			break;
 		case GridType::Goal:
+			Entity->Flags |= GOAL;
 			break;
 		case GridType::Rewind:
+			Entity->Flags |= REWIND;
 			break;
-		}
-		
+		}	
 	}
 
-
-
-
+	//TODO: a lot
 
 	APlayerEntity* Player = SpawnPlayer();
 	Grid.SetAt(StartGridLocation, Player);
@@ -223,7 +225,7 @@ void UGameManager::HandleUndoInput()
 			Entity->GridLocation = Timeline.Locations[i];
 			Grid.SetAt(Entity->GridLocation, Entity);
 
-			Entity->SetActorLocation(FVector(Entity->GridLocation) * BlockSize + Offset);
+			Entity->SetActorLocation(GetWorldLocation(Entity));
 		}
 
 		RevaluateSuperpositions();
@@ -294,7 +296,7 @@ void UGameManager::RevaluateSuperpositions()
 			Super->OldSuperposition = nullptr;
 			Super->GridLocation = Pair.Value[0]->GridLocation;
 			Grid.SetAt(Super->GridLocation, Super);
-			Super->SetActorLocation(FVector(Super->GridLocation) * BlockSize + Offset);
+			Super->SetActorLocation(GetWorldLocation(Super));
 			Super->SetActorHiddenInGame(false);
 		}
 		else {
@@ -359,9 +361,24 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	case D:
 		MoveInput.X = -1;
 		break;
-	case PASS: //can be removed after debugging
+	case PASS:
+		//TODO: need visual cue
 		LOG("Passed turn %d", TurnCounter + 1);
 	}
+	int32 Turns = (FMath::RoundToInt((Rotation.Yaw + CameraRotation) / 90) % 4 + 4) % 4;
+	switch (Turns)
+	{
+	case 0: break;
+	case 1:
+		MoveInput = { -MoveInput.Y, MoveInput.X, 0 };
+		break;
+	case 2:
+		MoveInput = { -MoveInput.X, -MoveInput.Y, 0 };
+		break;
+	case 3:
+		MoveInput = { MoveInput.Y, -MoveInput.X, 0 };
+	}
+
 
 	AEntity* CurrentPlayer = Players.Last();
 	if (!MoveInput.IsZero()) {
@@ -598,7 +615,7 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 
 			NewSuper->GridLocation = Pair.Value[0]->GridLocation;
 			Grid.SetAt(NewSuper->GridLocation, NewSuper);
-			NewSuper->SetActorLocation((FVector(NewSuper->GridLocation)* BlockSize) + Offset);
+			NewSuper->SetActorLocation(GetWorldLocation(NewSuper));
 		}
 	}
 
@@ -691,7 +708,7 @@ void UGameManager::RewindTimeline()
 	Superpositions[0]->SetActorHiddenInGame(false);
 	Superpositions[0]->GridLocation = StartGridLocation;
 	Grid.SetAt(StartGridLocation, Superpositions[0]);
-	Superpositions[0]->SetActorLocation((FVector(StartGridLocation) * BlockSize) + Offset);
+	Superpositions[0]->SetActorLocation(GetWorldLocation(Superpositions[0]));
 
 	Superpositions[0]->Players.Empty();
 	Superpositions[0]->Players.Append(Players);
@@ -704,7 +721,7 @@ void UGameManager::RewindTimeline()
 
 		Grid.SetAt(Player->GridLocation, nullptr);
 		Player->GridLocation = StartGridLocation;
-		Player->SetActorLocation((FVector(StartGridLocation) * BlockSize) + Offset);
+		Player->SetActorLocation(GetWorldLocation(Player));
 		Player->SetActorHiddenInGame(true);
 	}
 	
@@ -815,7 +832,7 @@ void UGameManager::CollapseTimeline(int32 Target)
 				Player->Flags &= ~SUPER;
 				Player->Superposition = nullptr;
 				Player->bInSuperposition = false;
-				Player->SetActorLocation(FVector(Player->GridLocation) * BlockSize + Offset);
+				Player->SetActorLocation(GetWorldLocation(Player));
 				Player->SetActorHiddenInGame(false);
 			}
 			else {
@@ -834,7 +851,7 @@ void UGameManager::CollapseTimeline(int32 Target)
 				Super->OldSuperposition = nullptr;
 				Super->GridLocation = Pair.Value[0]->GridLocation;
 				Grid.SetAt(Super->GridLocation, Super);
-				Super->SetActorLocation(FVector(Super->GridLocation)* BlockSize + Offset);
+				Super->SetActorLocation(GetWorldLocation(Super));
 				Super->SetActorHiddenInGame(false);
 			}
 		}
@@ -842,7 +859,7 @@ void UGameManager::CollapseTimeline(int32 Target)
 
 	for (AEntity* Entity : Timeline.Entities)
 	{
-		Entity->SetActorLocation(FVector(Entity->GridLocation) * BlockSize + Offset);
+		Entity->SetActorLocation(GetWorldLocation(Entity));
 	}
 
 	Timeline.Headers.RemoveAt(Equality, Timeline.Headers.Num() - Equality, true);
@@ -852,38 +869,36 @@ void UGameManager::CollapseTimeline(int32 Target)
 
 APlayerEntity* UGameManager::SpawnPlayer()
 {
-	FVector Location = FVector(StartGridLocation) * BlockSize;
-	Location += Offset;
-	APlayerEntity* Player = WorldContext->SpawnActor<APlayerEntity>(PlayerBlueprint, Location, FRotator::ZeroRotator);
+	APlayerEntity* Player = WorldContext->SpawnActor<APlayerEntity>(PlayerBlueprint, GetWorldLocation(StartGridLocation), Rotation);
 	Players.Emplace(Player);
 
+	Player->AddActorWorldOffset(Player->Offset);
 	Player->Flags |= MOVEABLE | CURRENT_PLAYER;
 	Player->GridLocation = StartGridLocation;
 
 	Player->GetStaticMeshComponent()->SetCustomPrimitiveDataFloat(0, TimelineCounter);
-	Player->GetStaticMeshComponent()->SetWorldRotation(FRotator(0, 180, 90));
-
 	return Player;
 }
 
 ASuperposition* UGameManager::SpawnSuperposition()
 {
-	FVector Location = FVector(StartGridLocation) * BlockSize;
-	Location += Offset;
-	ASuperposition* Superposition = WorldContext->SpawnActor<ASuperposition>(SuperBlueprint, Location, FRotator::ZeroRotator);
+	ASuperposition* Superposition = WorldContext->SpawnActor<ASuperposition>(SuperBlueprint, GetWorldLocation(StartGridLocation), Rotation);
 	Superpositions.Emplace(Superposition);
 
 	Superposition->Flags |= MOVEABLE;
 	Superposition->GridLocation = StartGridLocation;
 
-	Superposition->GetStaticMeshComponent()->SetWorldRotation(FRotator(0, 180, 90));
-
 	return Superposition;
 }
 
-FVector UGameManager::GetWorldLocation(GridCoord GridLocation)
+FVector UGameManager::GetWorldLocation(const GridCoord& GridLocation)
 {
-	return Transform.TransformPosition(FVector(GridLocation) * BlockSize + Offset + (FVector(BlockSize) / 2));
+	return Transform.TransformPosition(FVector(GridLocation) + (Dimensions / -2) + 0.5);
+}
+
+FVector UGameManager::GetWorldLocation(AEntity* Entity)
+{
+	return Transform.TransformPosition(FVector(Entity->GridLocation) + (Dimensions / -2) + 0.5) + Entity->Offset;
 }
 
 void UGameManager::VisualizeGrid()
@@ -892,119 +907,30 @@ void UGameManager::VisualizeGrid()
 	for (int32 i = 0; i < Grid.Grid.Num(); ++i)
 	{
 		int32 Index = i;
-		int32 Z = Index / (Grid.WIDTH * Grid.LENGTH);
-		Index -= (Z * (Grid.WIDTH * Grid.LENGTH));
-		int32 Y = Index / Grid.WIDTH;
-		int32 X = Index % Grid.WIDTH;
+		int32 Z = Index / (Grid.Dimensions.X * Grid.Dimensions.Y);
+		Index -= (Z * (Grid.Dimensions.X * Grid.Dimensions.Y));
+		int32 Y = Index / Grid.Dimensions.X;
+		int32 X = Index % Grid.Dimensions.X;
 
-		AEntity* Entity = Grid.Grid[i];
-		if (!Entity || !(Entity->Flags & MOVEABLE)) {
-			DrawDebugString(WorldContext, FVector(X, Y, Z) * BlockSize + Offset, FString::FromInt(i), NULL, FColor(0, 0, 0, 150));
-		}
-		else {
-			DrawDebugString(WorldContext, FVector(X, Y, Z) * BlockSize + Offset, Entity->GetActorLabel(), NULL, FColor::Red);
-		}
+		DrawDebugString(WorldContext, GetWorldLocation(GridCoord(X, Y, Z)), FString::Printf(TEXT("%d, %d, %d"), X, Y, Z), NULL, FColor(1, 1, 1, 255));
+
+		//AEntity* Entity = Grid.Grid[i];
+		//if (!Entity || !(Entity->Flags & MOVEABLE)) {
+		//	DrawDebugString(WorldContext, FVector(X, Y, Z) * BlockSize + Offset, FString::FromInt(i), NULL, FColor(0, 0, 0, 150));
+		//}
+		//else {
+		//	DrawDebugString(WorldContext, FVector(X, Y, Z) * BlockSize + Offset, Entity->GetActorLabel(), NULL, FColor::Red);
+		//}
 	}
 }
 
-void UGameManager::LoadGridFromFile()
-{
-	FString FilePath = FPaths::ProjectContentDir() / TEXT("Grids") / + TEXT(".txt");
-	FString FileContent;
-	if (FFileHelper::LoadFileToString(FileContent, *FilePath))
-	{
-		// File successfully read
-		LOG("File content: %s", *FileContent);
-		int a = 0;
-		int b = 0;
-		while (FileContent.Mid(b, 1) != ",") b++;
-		int X = FCString::Atoi(*FileContent.Mid(a, b - a));
-		b += 1;
-		a = b;
-		while (FileContent.Mid(b, 1) != ",") b++;
-		int Y = FCString::Atoi(*FileContent.Mid(a, b - a));
-		b += 1;
-		a = b;
-		while (FileContent.Mid(b, 1) != "\n") b++;
-		int Z = FCString::Atoi(*FileContent.Mid(a, b - a));
-
-		int32 WIDTH = X, LENGTH = Y, HEIGHT = Z + 2;
-
-		Grid.WIDTH = WIDTH;
-		Grid.LENGTH = LENGTH;
-		Grid.HEIGHT = HEIGHT;
-		Grid.Grid.Init(nullptr, LENGTH * WIDTH * HEIGHT);
-
-		int i = b + 2;
-
-		UStaticMesh* BlockMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Blocks/Cubes/WoodenCube.WoodenCube"));
-		UMaterial* RewindTileMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Blocks/Cubes/WoodenCube.WoodenCube"));
-		UMaterial* StartTileMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Blocks/Cubes/WoodenCube.WoodenCube"));
-		UMaterial* EndTileMaterial = LoadObject<UMaterial>(nullptr, TEXT("/Game/Blocks/Cubes/WoodenCube.WoodenCube"));
-
-		for (int z = 0; z < HEIGHT - 2; z++) {
-			for (int x = 0; x < WIDTH; x++) {
-				for (int y = 0; y < LENGTH; y++) {
-				
-					//if (FileContent.Mid(i, 1) == " ") i++;
-					//if (FileContent.Mid(i, 1) == "\n") i ++;
-					//if (FileContent.Mid(i, 1) == "\n") i ++;
-
-					while (FileContent.Mid(i, 1) != "0" &&
-							FileContent.Mid(i, 1) != "1" &&
-							FileContent.Mid(i, 1) != "2" &&
-							FileContent.Mid(i, 1) != "3" &&
-							FileContent.Mid(i, 1) != "4") i++;
-
-					FString val = FileContent.Mid(i, 1);
-
-					if (val != "0") {
-
-						GridCoord IntLocation(x, y, z);
-						FVector Location(x * BlockSize, y * BlockSize, z * BlockSize);
-						Location += FVector(-23.61, 350 - 55.75, 124.13);
-						AEntity* Entity = WorldContext->SpawnActor<AEntity>(Location, FRotator::ZeroRotator);
-						Entity->GridLocation = GridCoord(x, y, z);
-						Entity->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
-						//Entity->GetStaticMeshComponent()->SetStaticMesh(BlockMesh);
-						Entity->GetStaticMeshComponent()->SetWorldScale3D(FVector(0.049, 0.049, 0.049));
-
-						Grid.SetAt(Entity->GridLocation, Entity);
-
-						if (val == "2") {
-							Entity->GetStaticMeshComponent()->SetMaterial(0, StartTileMaterial);
-							StartGridLocation = GridCoord(x, y, z + 1);
-						}
-						else if (val == "3") {
-							Entity->GetStaticMeshComponent()->SetMaterial(0, EndTileMaterial);
-							Entity->Flags |= GOAL;
-						}
-						else if (val == "4") {
-							Entity->Flags |= REWIND;
-							Entity->GetStaticMeshComponent()->SetMaterial(0, RewindTileMaterial);
-						}
-					}
-
-					i++;
-				}
-			}
-		}
-
-	}
-	else
-	{
-		// Error reading file
-		ERROR("Failed to read file.");
-	}
-}
-
-//------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------------
 
 AEntity* EntityGrid::QueryAt(const GridCoord& Location, bool* bIsValid)
 {
-	if (Location.X < 0 || Location.X >= WIDTH ||
-		Location.Y < 0 || Location.Y >= LENGTH ||
-		Location.Z < 0 || Location.Z >= HEIGHT) 
+	if (Location.X < 0 || Location.X >= Dimensions.X ||
+		Location.Y < 0 || Location.Y >= Dimensions.Y ||
+		Location.Z < 0 || Location.Z >= Dimensions.Z)
 	{
 		ERROR("Invalid query at x: %d, y: %d, z: %d", Location.X, Location.Y, Location.Z);
 		if (bIsValid) *bIsValid = false;
@@ -1012,20 +938,20 @@ AEntity* EntityGrid::QueryAt(const GridCoord& Location, bool* bIsValid)
 	}
 
 	if (bIsValid) *bIsValid = true;
-	return Grid[Location.X + (Location.Y * WIDTH) + (Location.Z * WIDTH * LENGTH)];
+	return Grid[Location.X + (Location.Y * Dimensions.X) + (Location.Z * Dimensions.X * Dimensions.Y)];
 }
 
 void EntityGrid::SetAt(const GridCoord& Location, AEntity* Entity)
 {
-	if (Location.X < 0 || Location.X >= WIDTH ||
-		Location.Y < 0 || Location.Y >= LENGTH ||
-		Location.Z < 0 || Location.Z >= HEIGHT)
+	if (Location.X < 0 || Location.X >= Dimensions.X ||
+		Location.Y < 0 || Location.Y >= Dimensions.Y ||
+		Location.Z < 0 || Location.Z >= Dimensions.Z)
 	{
 		ERROR("Invalid set at x: %d, y: %d, z: %d", Location.X, Location.Y, Location.Z);
 		return;
 	}
 
-	Grid[Location.X + (Location.Y * WIDTH) + (Location.Z * WIDTH * LENGTH)] = Entity;
+	Grid[Location.X + (Location.Y * Dimensions.X) + (Location.Z * Dimensions.X * Dimensions.Y)] = Entity;
 }
 
 //-----------------------------------------------------------------------------
@@ -1053,13 +979,13 @@ void UEntityAnimator::Start(TArray<SubTurn>& InSubturns, int32 Start, int32 End,
 
 				for (; PathIndex >= EndIndex; --PathIndex)
 				{
-					Path.Path.Emplace((FVector(Subturn.Paths[PathIndex]) * BlockSize) + FVector(-23.61, 350 - 55.75, 124.13 - 5.3));
+					Path.Path.Emplace(Transform.TransformPosition(FVector(Subturn.Paths[PathIndex]) + Offset) + Path.Entity->Offset);
 				}
 			}
 			else {
 				for (; PathIndex <= EndIndex; ++PathIndex)
 				{
-					Path.Path.Emplace((FVector(Subturn.Paths[PathIndex]) * BlockSize) + FVector(-23.61, 350 - 55.75, 124.13 - 5.3));
+					Path.Path.Emplace(Transform.TransformPosition(FVector(Subturn.Paths[PathIndex]) + Offset) + Path.Entity->Offset);
 				}
 			}
 		}

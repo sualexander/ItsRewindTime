@@ -3,18 +3,16 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Engine/StaticMeshActor.h"
 #include "GameFramework/GameModeBase.h"
+#include "Engine/StaticMeshActor.h"
 
 #include "Camera/CameraComponent.h"
-
 
 #include "RewindCode.generated.h"
 
 
 enum EInputStates;
 using GridCoord = UE::Math::TIntVector3<int8>;
-
 
 UCLASS()
 class REWINDCODEPLUGIN_API ARewindGameMode : public AGameModeBase
@@ -50,8 +48,8 @@ public:
 
 struct EntityGrid
 {
-	int32 WIDTH, LENGTH, HEIGHT;
 	TArray<AEntity*> Grid;
+	GridCoord Dimensions;
 
 	AEntity* QueryAt(const GridCoord& Location, bool* bIsValid = nullptr);
 	void SetAt(const GridCoord& Location, AEntity* Entity);
@@ -85,6 +83,8 @@ public:
 
 	void HandleUndoInput();
 
+	int32 CameraRotation = 0;
+
 	void ProcessTurn(EInputStates Input);
 	void OnTurnEnd();
 
@@ -113,10 +113,9 @@ public:
 
 	//Grid
 	EntityGrid Grid;
+	FVector Dimensions;
 	FTransform Transform;
 	FRotator Rotation;
-	FVector Offset;
-	float BlockSize;
 	GridCoord StartGridLocation;
 	int32 HeightMin = -1;
 
@@ -129,9 +128,8 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void VisualizeGrid();
 
-	void LoadGridFromFile();
-
-	FVector GetWorldLocation(GridCoord GridLocation);
+	FVector GetWorldLocation(const GridCoord& GridLocation);
+	FVector GetWorldLocation(AEntity* Entity);
 };
 
 //move base entity stuff into seperate file
@@ -153,6 +151,9 @@ class REWINDCODEPLUGIN_API AEntity : public AStaticMeshActor
 public:
 	uint32 Flags = 0;
 	GridCoord GridLocation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FVector Offset;
 };
 
 UCLASS(Blueprintable)
@@ -252,7 +253,8 @@ class REWINDCODEPLUGIN_API UEntityAnimator : public UObject, public FTickableGam
 
 public:
 	UWorld* WorldContext;
-	int32 BlockSize = 10;
+	FTransform Transform;
+	FVector Offset;
 
 	TArray<SubTurn>* Subturns;
 
