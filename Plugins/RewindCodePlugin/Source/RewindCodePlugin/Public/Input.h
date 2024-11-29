@@ -57,11 +57,19 @@ public:
 	DECLARE_DELEGATE(FOnInputChanged)
 	FOnInputChanged OnInputChanged;
 
+	//Restart
+	DECLARE_DELEGATE_OneParam(FOnRestartPressed, bool)
+	FOnRestartPressed OnRestartPressed;
+
+	void OnRestart(bool bStart) { OnRestartPressed.Execute(bStart); }
+
+	//Pass
 	DECLARE_DELEGATE_OneParam(FOnPassPressed, bool)
 	FOnPassPressed OnPassPressed;
-
+	
 	void OnPassTurn(bool bStart) { OnPassPressed.Execute(bStart); }
 
+	//Undo
 	DECLARE_DELEGATE(FOnUndoPressed)
 	FOnUndoPressed OnUndoPressed;
 

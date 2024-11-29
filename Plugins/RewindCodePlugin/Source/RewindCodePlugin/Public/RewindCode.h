@@ -55,7 +55,7 @@ struct EntityGrid
 };
 
 UCLASS(BlueprintType)
-class REWINDCODEPLUGIN_API UGameManager : public UObject
+class REWINDCODEPLUGIN_API UGameManager : public UObject, public FTickableGameObject
 {
 	GENERATED_BODY()
 
@@ -73,16 +73,33 @@ public:
 	//Input
 	EInputStates Buffer;
 	double InputTimerStart;
+	double RestartTimerStart;
+	size_t RestartPresses;
 	void HandleMovementInput();
 
+	//to block wasd input
 	bool bHasPassed = false;
-	bool bPassPressed = false;
-	void HandlePassInput(bool bStart);
 
+	bool bPassPressed = false;
+	bool bRestartPressed = false;
+
+	//to keep track if it's the second time restart is being pressed
+	bool bRestartSecond = false;
+
+	void HandlePassInput(bool bStart);
+	void HandleRestartInput(bool bStart);
 	void HandleUndoInput();
 
 	void ProcessTurn(EInputStates Input);
 	void OnTurnEnd();
+
+	//Ticking 
+	virtual void Tick(float DeltaTime) override;
+	virtual TStatId GetStatId() const override;
+	bool IsTickable() const override { 
+		if (RestartPresses == 0) return false;
+		return true;
+	}
 
 	//Main
 	TArray<struct Timeline> Timelines;

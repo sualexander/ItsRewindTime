@@ -60,10 +60,17 @@ void ARewindPlayerController::SetupInputComponent()
 
 	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnPassTurn, true);
 	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnPassTurn, false);
-	
+
+
+	EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnRestart, true);
+	EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnRestart, false);
+
+
+
+
 	EnhancedInputComponent->BindAction(UndoAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnUndo);
 
-	//EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnRestart, true);
+
 	//EnhancedInputComponent->BindAction(EscapeAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnEscape);
 
 	EnhancedInputComponent->BindAction(DebugAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnDebug, true);
