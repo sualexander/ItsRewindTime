@@ -536,6 +536,8 @@ bool URewindEditorMode::InputKey(FEditorViewportClient* ViewportClient, FViewpor
 					ScrollOffset.Z += (FMath::Abs(ScrollOffset.Z + (ScrollDirection * FMath::Sign(Direction.Z))) < Dimensions.Z) * ScrollDirection * FMath::Sign(Direction.Z);
 					break;
 				}
+
+				LOG("%s, %s", *Dimensions.ToString(), *ScrollOffset.ToString());
 			}
 		}
 		return true;

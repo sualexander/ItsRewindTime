@@ -77,7 +77,6 @@ public:
 	double InputTimerStart;
 	void HandleMovementInput();
 
-	bool bHasPassed = false;
 	bool bPassPressed = false;
 	void HandlePassInput(bool bStart);
 
@@ -99,6 +98,9 @@ public:
 	void EvaluateSubTurn(struct SubTurnHeader& Header, struct SubTurn& Subturn);
 	void UpdateEntityPosition(struct SubTurn& Subturn, AEntity* Entity, const GridCoord& Delta);
 	bool CheckSuperposition(AEntity* To, AEntity* From);
+	bool CheckClimbing(
+		AEntity* Entity, const GridCoord& Location, const GridCoord& Delta, 
+		TArray<AEntity*>* Connected = nullptr, int32* Height = nullptr);
 	APlayerEntity* SpawnPlayer();
 	ASuperposition* SpawnSuperposition();
 
@@ -119,7 +121,6 @@ public:
 	GridCoord StartGridLocation;
 	int32 HeightMin = -1;
 
-
 	//Blueprints
 	UClass* PlayerBlueprint;
 	UClass* SuperBlueprint;
@@ -136,11 +137,12 @@ public:
 enum EntityFlags : uint32
 {
 	MOVEABLE			= 1U,
-	REWIND				= 1U << 1,
-	SUPER				= 1U << 2,
-	GOAL				= 1U << 3,
-	PERSISTENT			= 1U << 4,
-	CURRENT_PLAYER		= 1U << 5
+	CLIMBABLE			= 1U << 1,
+	PERSISTENT			= 1U << 2,
+	SUPER				= 1U << 3,
+	GOAL				= 1U << 4,
+	REWIND				= 1U << 5,
+	CURRENT_PLAYER		= 1U << 6
 };
 
 UCLASS()
@@ -164,6 +166,9 @@ class REWINDCODEPLUGIN_API APlayerEntity : public AEntity
 public:
 	ASuperposition* Superposition;
 	bool bInSuperposition = false;
+
+	//UFUNCTION(BlueprintImplementableEvent)
+	//void UpdateVisuals(int32 Type) {}
 };
 
 UCLASS(Blueprintable)

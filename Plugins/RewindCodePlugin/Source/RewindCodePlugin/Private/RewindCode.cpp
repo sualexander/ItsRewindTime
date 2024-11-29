@@ -188,12 +188,7 @@ void UGameManager::HandlePassInput(bool bStart)
 	if (PlayerController->bIsDebugging) return;
 
 	bPassPressed = bStart;
-	if (!bStart) {
-		bHasPassed = false;
-	}
-	else if (!Animator->bIsAnimating) {
-		ProcessTurn(PASS);
-	}
+	if (bPassPressed && !Animator->bIsAnimating) ProcessTurn(PASS);
 }
 
 void UGameManager::HandleUndoInput()
@@ -313,7 +308,6 @@ void UGameManager::OnTurnEnd()
 	LOG("Ending Turn %d", TurnCounter);
 	if (PlayerController->bIsDebugging) return;
 
-	//VisualizeGrid();
 	InputTimerStart = 0;
 
 	if (RewindQueue) {
@@ -322,14 +316,6 @@ void UGameManager::OnTurnEnd()
 	}
 	if (CollapseQueue != -1) {
 		CollapseTimeline(CollapseQueue);
-		return;
-	}
-
-	if (bPassPressed) {
-		if (!bHasPassed) {
-			bHasPassed = true;
-			ProcessTurn(PASS);
-		}
 		return;
 	}
 
@@ -379,16 +365,9 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		MoveInput = { MoveInput.Y, -MoveInput.X, 0 };
 	}
 
-
 	AEntity* CurrentPlayer = Players.Last();
 	if (!MoveInput.IsZero()) {
-		//Check if input results in a successful movement, otherwise don't advance turn
-		for (GridCoord GridLocation = CurrentPlayer->GridLocation;;)
-		{
-			AEntity* Front = Grid.QueryAt(GridLocation += MoveInput);
-			if (!Front) break;
-			if (!(Front->Flags & MOVEABLE)) return;
-		}
+		if (!CheckClimbing(CurrentPlayer, CurrentPlayer->GridLocation, MoveInput)) return;
 	}
 	Buffer = NONE;
 
@@ -433,9 +412,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		//Check collapse
 		for (int32 n = CollapseCandidates.Num() - 1; n >= 0; --n)
 		{
-			AEntity* Entity = CollapseCandidates[n].Key;
-			//if (Entity->Flags & SUPER && StaticCast<APlayerEntity*>(Entity)->bInSuperposition == true) continue;
-			AEntity* Query = Grid.QueryAt(Entity->GridLocation + DownVector);
+			AEntity* Query = Grid.QueryAt(CollapseCandidates[n].Key->GridLocation + DownVector);
 			if (Query && (Query->Flags & REWIND)) {
 				CollapseCandidates.RemoveAt(n);
 			}
@@ -444,15 +421,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 
 	//Collapse from premature rewind
 	if (RewindQueue) {
-		for (int32 n = 0; n < TimelineCounter; ++n)
-		{
-			//Not actually sure if it's > or >=
-			if (Timelines[n].Rewinder == RewindQueue && Timelines[n].NumTurns >= TurnCounter) {
-				CollapseQueue = n;
-				RewindQueue = nullptr;
-				break;
-			}
-		}
+
 	}
 	else if (!CollapseCandidates.IsEmpty()) {
 		CollapseQueue = CollapseCandidates[0].Value;
@@ -479,14 +448,23 @@ void UGameManager::ProcessTurn(EInputStates Input)
 
 void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 {
-	//Query in direction of movement until wall or air
 	TArray<AEntity*> Connected;
 	Connected.Emplace(Header.Player);
+
+	int32 Height = 0; //For climbing
 	for (GridCoord GridLocation = Header.Player->GridLocation;;)
 	{
 		AEntity* Front = Grid.QueryAt(GridLocation += Header.Move);
 		if (!Front) break;
-		if (!(Front->Flags & MOVEABLE)) return;
+		if (!(Front->Flags & MOVEABLE)) {
+			Connected.Empty();
+			if (CheckClimbing(Header.Player, Header.Player->GridLocation, Header.Move, &Connected, &Height)) {
+				Connected.EmplaceAt(0, Header.Player);
+				Header.Move.Z = 1;
+				break;
+			}
+			return;
+		}
 		if (CheckSuperposition(Front, Connected.Last())) break;
 
 		Connected.Emplace(Front);
@@ -512,6 +490,11 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 		}
 	}
 
+	//Climb
+	if (Header.Move.Z == 1) {
+		UpdateEntityPosition(SubTurn, Connected[0], GridCoord(0, 0, Height));
+	}
+
 	//Update from farthest to self
 	for (int32 i = Connected.Num() - 1; i >= 0; --i)
 	{
@@ -526,12 +509,6 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 			if (Below && !CheckSuperposition(Below, Entity)) break;
 
 			if (Entity->GridLocation.Z - 1 <= HeightMin) {
-				if (i == 0) {
-					//timeline collapse
-					//LOG("collapse");
-				}
-				//do stuff like stop rendering, play fade animation etc...
-				//LOG("Fell off da world");
 				break;
 			}
 
@@ -553,7 +530,6 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 				AEntity* Below = Grid.QueryAt(Up->GridLocation + DownVector);
 				if (Below) break;
 				if (Up->GridLocation.Z - 1 <= HeightMin) {
-					//do stuff like stop rendering, play fade animation etc...
 					LOG("Should this even ever print??? Fell off da world");
 					break;
 				}
@@ -688,6 +664,29 @@ bool UGameManager::CheckSuperposition(AEntity* To, AEntity* From)
 	return false;
 }
 
+bool UGameManager::CheckClimbing(AEntity* Entity, const GridCoord& Location, const GridCoord& Delta, TArray<AEntity*>* Connected, int32* Height)
+{
+	for (GridCoord GridLocation = Location;;)
+	{
+		AEntity* Front = Grid.QueryAt(GridLocation += Delta);
+		if (!Front) return true;
+		if (!(Front->Flags & MOVEABLE)) {
+			if (Grid.QueryAt(Location + Delta)->Flags & CLIMBABLE && !Grid.QueryAt(Location + UpVector)) {
+				if (Connected) {
+					Connected->Empty();
+					*Height += 1;
+				}
+				return CheckClimbing(Entity, Location + UpVector, Delta, Connected, Height);
+			}
+			return false;
+		}
+		AEntity* Back = Grid.QueryAt(GridLocation - Delta);
+		if (CheckSuperposition(Front, Back ? Back : Entity)) return true;
+
+		if (Connected) Connected->Emplace(Front);
+	}
+}
+
 void UGameManager::RewindTimeline()
 {
 	Timelines[TimelineCounter].Rewinder = RewindQueue;
@@ -734,63 +733,33 @@ void UGameManager::RewindTimeline()
 
 void UGameManager::CollapseTimeline(int32 Target)
 {
+	LOG("Collapsing to timeline %d", Target);
+
 	CollapseQueue = -1;
 
-	//Find when to collapse to
-	AEntity* Rewinder = Timelines[Target].Rewinder;
-	int32 Equality = 0;
-
-	GridCoord Past(0, 0, 0);
-	GridCoord Current(0, 0, 0);
-	int32 End = FMath::Min(Timelines[Target].NumTurns, TurnCounter);
-	for (int32 Turn = 0; Turn < End; ++Turn)
-	{
-		for (int32 i = 0; i < Target + 1; ++i)
-		{
-			SubTurn& Subturn = Timelines[Target].Subturns[(Turn * (Target + 1)) + i];
-			int32 Index = Subturn.Entities.Find(Rewinder);
-			if (Index != -1) {
-				Past = Index == Subturn.PathIndices.Num() - 1 ? Subturn.Paths.Last() : Subturn.Paths[Subturn.PathIndices[Index + 1] - 1];
-			}
-		}
-	
-		for (int32 i = 0; i < TimelineCounter + 1; ++i)
-		{
-			SubTurn& Subturn = Timelines[TimelineCounter].Subturns[(Turn * (TimelineCounter + 1)) + i];
-			int32 Index = Subturn.Entities.Find(Rewinder);
-			if (Index != -1) {
-				Current = Index == Subturn.PathIndices.Num() - 1 ? Subturn.Paths.Last() : Subturn.Paths[Subturn.PathIndices[Index + 1] - 1];
-			}
-		}
-
-		if (Past == Current) {
-			Equality = Turn + 1;
-			if (Turn + 1 == End) --Equality;
-		}
-	}
-
-	LOG("Collapsing to timeline %d, turn %d", Target, Equality);
-	//Actually collapse
+	GridCoord CollapseRemnant = Timelines[Target].Rewinder->GridLocation;
 	Timelines.RemoveAt(Target + 1, Timelines.Num() - Target - 1, true);
-	TMap<GridCoord, TArray<APlayerEntity*>> Persistent;
-	for (int32 i = Players.Num() - 1; i > Target; --i)
+	TimelineCounter = Target;
+	TurnCounter = 0;
+	Timeline& Timeline = Timelines[TimelineCounter];
+
+	//Destroy collapsed players
+	TArray<GridCoord> Persistent;
+	for (int32 i = Players.Num() - 1; i >= 0; --i)
 	{
-		APlayerEntity* Player = Players.Pop(true);
-		if (Player->bInSuperposition) {
-			Player->Flags |= PERSISTENT;
-			Persistent.FindOrAdd(Player->GridLocation).Emplace(Player);
+		if (Players[i]->bInSuperposition) {
+			Players[i]->Flags |= PERSISTENT;
+			Persistent.AddUnique(Players[i]->GridLocation);
 		}
-		else {
+		if (i > Target) {
+			APlayerEntity* Player = Players.Pop();
 			Grid.SetAt(Player->GridLocation, nullptr);
 			Player->Destroy();
 		}
 	}
 
-	TimelineCounter = Target;
-	Timeline& Timeline = Timelines[TimelineCounter];
-	TurnCounter = Equality;
-
-	for (int32 i = 0; i < Timeline.Entities.Num(); ++i)
+	//Reset locations to turn 0
+ 	for (int32 i = 0; i < Timeline.Entities.Num(); ++i)
 	{
 		AEntity* Entity = Timeline.Entities[i];
 		if (Entity->Flags & PERSISTENT) continue;
@@ -798,9 +767,7 @@ void UGameManager::CollapseTimeline(int32 Target)
 		Entity->GridLocation = Timeline.Locations[i];
 		Grid.SetAt(Entity->GridLocation, Entity);
 	}
-
-	int32 Index = Equality * (TimelineCounter + 1);
-	for (int32 i = Timeline.Subturns.Num() - 1; i >= Index; --i)
+	for (int32 i = Timeline.Subturns.Num() - 1; i >= 0; --i)
 	{
 		SubTurn& Subturn = Timeline.Subturns[i];
 		for (int32 j = 0; j < Subturn.Entities.Num(); ++j)
@@ -812,58 +779,37 @@ void UGameManager::CollapseTimeline(int32 Target)
 			Grid.SetAt(Entity->GridLocation, Entity);
 		}
 	}
-
-	RevaluateSuperpositions();
-
-	for (const auto& Pair : Persistent)
-	{
-		AEntity* Query = Grid.QueryAt(Pair.Value[0]->GridLocation);
-		if (ASuperposition* Super = Cast<ASuperposition>(Query)) {
-			for (APlayerEntity* Player : Pair.Value)
-			{
-				Super->Players.Emplace(Player);
-				Player->Superposition = Super; //Is this necessary at all???
-			}
-		}
-		else {
-			if (Pair.Value.Num() == 1) {
-				APlayerEntity* Player = Pair.Value[0];
-				Grid.SetAt(Player->GridLocation, Player);
-				Player->Flags &= ~SUPER;
-				Player->Superposition = nullptr;
-				Player->bInSuperposition = false;
-				Player->SetActorLocation(GetWorldLocation(Player));
-				Player->SetActorHiddenInGame(false);
-			}
-			else {
-				for (ASuperposition* S : Superpositions)
-				{
-					if (S->Players.IsEmpty()) {
-						Super = S;
-						break;
-					}
-				}
-				for (APlayerEntity* Player : Pair.Value)
-				{
-					Super->Players.Emplace(Player);
-				}
-
-				Super->OldSuperposition = nullptr;
-				Super->GridLocation = Pair.Value[0]->GridLocation;
-				Grid.SetAt(Super->GridLocation, Super);
-				Super->SetActorLocation(GetWorldLocation(Super));
-				Super->SetActorHiddenInGame(false);
-			}
-		}
-	}
-
 	for (AEntity* Entity : Timeline.Entities)
 	{
 		Entity->SetActorLocation(GetWorldLocation(Entity));
 	}
 
-	Timeline.Headers.RemoveAt(Equality, Timeline.Headers.Num() - Equality, true);
-	Timeline.Subturns.RemoveAt(Index, Timeline.Subturns.Num() - Index, true);
+	RevaluateSuperpositions();
+
+	//Spawn new persistent "superpositions"
+	for (const GridCoord& Location : Persistent)
+	{
+		AEntity* Entity = WorldContext->SpawnActor<AEntity>(SuperBlueprint, FVector::Zero(), Rotation);
+		Entity->Flags |= MOVEABLE | CLIMBABLE | PERSISTENT;
+		Entity->GridLocation = Location;
+		Entity->SetActorLocation(GetWorldLocation(Entity));
+		Entity->SetActorHiddenInGame(false);
+		//Slighly different material;
+
+		Grid.SetAt(Location, Entity);
+	}
+
+	//"Collpase Remnant"
+	AEntity* Entity = WorldContext->SpawnActor<AEntity>(PlayerBlueprint, FVector::Zero(), Rotation);
+	Entity->Flags |= CLIMBABLE | PERSISTENT;
+	Entity->GridLocation = CollapseRemnant;
+	Entity->SetActorLocation(GetWorldLocation(Entity));
+	//Slighly different material;
+
+	Grid.SetAt(CollapseRemnant, Entity);
+
+	Timeline.Headers.Empty();
+	Timeline.Subturns.Empty();
 	Timeline.Rewinder = nullptr;
 }
 
@@ -873,7 +819,7 @@ APlayerEntity* UGameManager::SpawnPlayer()
 	Players.Emplace(Player);
 
 	Player->AddActorWorldOffset(Player->Offset);
-	Player->Flags |= MOVEABLE | CURRENT_PLAYER;
+	Player->Flags |= MOVEABLE | CLIMBABLE;
 	Player->GridLocation = StartGridLocation;
 
 	Player->GetStaticMeshComponent()->SetCustomPrimitiveDataFloat(0, TimelineCounter);
@@ -885,7 +831,7 @@ ASuperposition* UGameManager::SpawnSuperposition()
 	ASuperposition* Superposition = WorldContext->SpawnActor<ASuperposition>(SuperBlueprint, GetWorldLocation(StartGridLocation), Rotation);
 	Superpositions.Emplace(Superposition);
 
-	Superposition->Flags |= MOVEABLE;
+	Superposition->Flags |= MOVEABLE | CLIMBABLE;
 	Superposition->GridLocation = StartGridLocation;
 
 	return Superposition;
@@ -912,15 +858,13 @@ void UGameManager::VisualizeGrid()
 		int32 Y = Index / Grid.Dimensions.X;
 		int32 X = Index % Grid.Dimensions.X;
 
-		DrawDebugString(WorldContext, GetWorldLocation(GridCoord(X, Y, Z)), FString::Printf(TEXT("%d, %d, %d"), X, Y, Z), NULL, FColor(1, 1, 1, 255));
-
-		//AEntity* Entity = Grid.Grid[i];
-		//if (!Entity || !(Entity->Flags & MOVEABLE)) {
-		//	DrawDebugString(WorldContext, FVector(X, Y, Z) * BlockSize + Offset, FString::FromInt(i), NULL, FColor(0, 0, 0, 150));
-		//}
-		//else {
-		//	DrawDebugString(WorldContext, FVector(X, Y, Z) * BlockSize + Offset, Entity->GetActorLabel(), NULL, FColor::Red);
-		//}
+		AEntity* Entity = Grid.Grid[i];
+		if (!Entity || !(Entity->Flags & MOVEABLE)) {
+			DrawDebugString(WorldContext, GetWorldLocation(GridCoord(X, Y, Z)), FString::FromInt(i), NULL, FColor(0, 0, 0, 150));
+		}
+		else {
+			DrawDebugString(WorldContext, GetWorldLocation(GridCoord(X, Y, Z)), Entity->GetActorLabel(), NULL, FColor::Red);
+		}
 	}
 }
 
@@ -1038,7 +982,7 @@ void UEntityAnimator::Tick(float DeltaTime)
 		int32 PathEnd = Animation.PathIndex == Animation.Path.Num() - 1 ? Animation.Path.Num() - 1 : Animation.PathIndex + 1;
 		Animation.Entity->SetActorLocation(FMath::Lerp(Animation.Path[Animation.PathIndex], Animation.Path[PathEnd], Alpha));
 
-		if (Animation.Entity->GetActorLocation() == Animation.Path[PathEnd]) {
+		if (Animation.Entity->GetActorLocation().Equals(Animation.Path[PathEnd])) {
 			if (Animation.PathIndex == Animation.Path.Num() - 1) {
 				Animation.PathIndex = -1;
 				
