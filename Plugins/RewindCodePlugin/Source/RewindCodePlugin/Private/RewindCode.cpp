@@ -460,7 +460,6 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 			Connected.Empty();
 			if (CheckClimbing(Header.Player, Header.Player->GridLocation, Header.Move, &Connected, &Height)) {
 				Connected.EmplaceAt(0, Header.Player);
-				Header.Move.Z = 1;
 				break;
 			}
 			return;
@@ -491,7 +490,7 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& SubTurn)
 	}
 
 	//Climb
-	if (Header.Move.Z == 1) {
+	if (Height != 0) {
 		UpdateEntityPosition(SubTurn, Connected[0], GridCoord(0, 0, Height));
 	}
 
@@ -622,12 +621,22 @@ void UGameManager::UpdateEntityPosition(SubTurn& Subturn, AEntity* Entity, const
 	}
 	Entity->GridLocation += Delta;
 
-	//We assume entities can only move once contiguously in a subturn
-	if (Subturn.Entities.IsEmpty() || (Subturn.Entities.Last() != Entity)) {
+	//LOL NOT TRUE!!! We assume entities can only move once contiguously in a subturn
+	int32 Index = Subturn.Entities.Find(Entity);
+	if (Index == -1) {
 		Subturn.Entities.Emplace(Entity);
 		Subturn.PathIndices.Emplace(Subturn.Paths.Emplace(OldLocation));
+		Subturn.Paths.Emplace(Entity->GridLocation);
 	}
-	Subturn.Paths.Emplace(Entity->GridLocation);
+	else if (Index == Subturn.Entities.Num() - 1) {
+		Subturn.Paths.Emplace(Entity->GridLocation);
+	}
+	else {
+		Subturn.Paths.EmplaceAt(Subturn.PathIndices[Index + 1], Entity->GridLocation);
+		for (int32 i = Index + 1; i < Subturn.PathIndices.Num(); ++i) {
+			++Subturn.PathIndices[i];
+		}
+	}
 
 	//Check for rewind tile
 	if (Entity->Flags & SUPER || Entity->IsA<ASuperposition>()) return;
