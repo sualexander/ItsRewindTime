@@ -66,7 +66,6 @@ ARewindPawn::ARewindPawn()
 
 UGameManager::UGameManager()
 {
-	//This should all go out of constructor, into LoadLevel() maybe?
 	if (!GetWorld()) return;
 
 	WorldContext = GetWorld();
@@ -74,8 +73,6 @@ UGameManager::UGameManager()
 	Animator = CreateDefaultSubobject<UEntityAnimator>(TEXT("Animator"));
 	Animator->WorldContext = WorldContext;
 	Animator->OnAnimationsFinished.BindUObject(this, &UGameManager::OnTurnEnd);
-
-	Animator->Temp = this; //pls remove asap
 
 	//There must be a better way to do this...
 	static ConstructorHelpers::FClassFinder<APlayerEntity> PlayerBP(TEXT("/Game/Blueprints/BP_Player"));
@@ -100,6 +97,7 @@ void UGameManager::LoadLevel()
 		if (*Itr) Itr->SetActorHiddenInGame(true);
 	}
 
+	//Transfer puzzle data
 	Grid.Dimensions = GridCoord(Settings->Dimensions);
 	Dimensions = FVector(Settings->Dimensions);
 	Transform = Settings->Transform;
@@ -109,6 +107,7 @@ void UGameManager::LoadLevel()
 	Animator->Transform = Transform;
 	Animator->Offset = Dimensions / -2 + 0.5;
 
+	//Initialize grid
 	for (int32 i = 0; i < Settings->GridData.Num(); ++i)
 	{
 		int32 Index = i;
@@ -152,6 +151,7 @@ void UGameManager::LoadLevel()
 	}
 
 	//TODO: a lot
+	//init 4 cameras, 
 
 	APlayerEntity* Player = SpawnPlayer();
 	Grid.SetAt(StartGridLocation, Player);
@@ -161,6 +161,9 @@ void UGameManager::LoadLevel()
 	Timelines.Emplace();
 	CollapseQueue = -1;
 	RewindQueue = nullptr;
+
+	//more loading anims, camera pan???
+	State = Waiting;
 }
 
 void UGameManager::HandleMovementInput()
@@ -698,13 +701,69 @@ bool UGameManager::CheckClimbing(AEntity* Entity, const GridCoord& Location, con
 
 void UGameManager::RewindTimeline()
 {
+	//Check for new persistent superpositions
+	TArray<GridCoord> Persistent;
+	for (APlayerEntity* Player : Players)
+	{
+		if (Player->bInSuperposition) {
+			Persistent.AddUnique(Player->GridLocation);
+		}
+	}
+
+	for (const GridCoord& Location : Persistent)
+	{
+		AEntity* Entity = WorldContext->SpawnActor<AEntity>(SuperBlueprint, FVector::Zero(), Rotation);
+		Entity->Flags |= MOVEABLE | CLIMBABLE | PERSISTENT;
+		Entity->GridLocation = Location;
+		Entity->SetActorLocation(GetWorldLocation(Entity));
+		Entity->SetActorHiddenInGame(false);
+		//Slighly different material;
+
+		Grid.SetAt(Location, Entity);
+	}
+
+	//Traverse paths in reverse accounting for immovable blockers
+	TArray<EntityAnimationPath> AnimationGroups;
+	TArray<uint16> GroupIndices;
+	for (int32 SubturnIndex = Timelines[TimelineCounter].Subturns.Num() - 1; SubturnIndex >= 0; --SubturnIndex)
+	{
+		GroupIndices.Emplace(AnimationGroups.Num());
+
+		SubTurn& Subturn = Timelines[TimelineCounter].Subturns[SubturnIndex];
+		float MaxDuration = FMath::Max(Subturn.Durations);
+		for (int32 EntityIndex = 0; EntityIndex < Subturn.Entities.Num(); ++EntityIndex)
+		{
+			AEntity* Entity = Subturn.Entities[EntityIndex];
+			if (Entity->Flags & PERSISTENT) continue;
+
+			EntityAnimationPath& AnimPath = AnimationGroups.Emplace_GetRef(Entity, MaxDuration - Subturn.Durations[EntityIndex], SubturnIndex);
+
+			int32 PathIndex = EntityIndex == Subturn.PathIndices.Num() - 1 ? Subturn.Paths.Num() - 1 : Subturn.PathIndices[EntityIndex + 1] - 1;
+			for (; PathIndex >= Subturn.PathIndices[EntityIndex]; --PathIndex)
+			{
+				AEntity* Query = Grid.QueryAt(Subturn.Paths[PathIndex]);
+				if (Query && !(Query->Flags & MOVEABLE)) break;
+
+				if (Grid.QueryAt(Entity->GridLocation) == Entity) {
+					Grid.SetAt(Entity->GridLocation, nullptr);
+				}
+				Entity->GridLocation = Subturn.Paths[PathIndex];
+				Grid.SetAt(Entity->GridLocation, Entity);
+
+				AnimPath.Path.Emplace(GetWorldLocation(Entity));
+			}
+		}
+
+		RevaluateSuperpositions(); //really only for animation purposes;
+	}
+
+	//Send to animator
+	Animator->Start(AnimationGroups, GroupIndices);
+
+	//Start new timeline
 	Timelines[TimelineCounter].Rewinder = RewindQueue;
 	Timelines[TimelineCounter].NumTurns = TurnCounter;
 
-	//Do animations
-	//animations should update grid as well
-
-	//Start new timeline
 	++TimelineCounter;
 	Timelines.Emplace();
 	TurnCounter = 0;
@@ -729,15 +788,8 @@ void UGameManager::RewindTimeline()
 
 		Grid.SetAt(Player->GridLocation, nullptr);
 		Player->GridLocation = StartGridLocation;
-		Player->SetActorLocation(GetWorldLocation(Player));
 		Player->SetActorHiddenInGame(true);
 	}
-	
-	////Reset other timelines
-	//for ()
-	//{
-
-	//}
 }
 
 void UGameManager::CollapseTimeline(int32 Target)
@@ -757,7 +809,6 @@ void UGameManager::CollapseTimeline(int32 Target)
 	for (int32 i = Players.Num() - 1; i >= 0; --i)
 	{
 		if (Players[i]->bInSuperposition) {
-			Players[i]->Flags |= PERSISTENT;
 			Persistent.AddUnique(Players[i]->GridLocation);
 		}
 		if (i > Target) {
@@ -918,9 +969,8 @@ void UEntityAnimator::Start(TArray<SubTurn>& InSubturns, int32 Start, int32 End,
 
 		GroupIndices.Emplace(GroupQueue.Num());
 
-		float MaxDuration = bReverse * FMath::Max(Subturn.Durations);
-		int32 EntityIndex = 0;
-		for (; EntityIndex < Subturn.Entities.Num(); ++EntityIndex)
+		float MaxDuration = bReverse * FMath::Max(Subturn.Durations);		
+		for (int32 EntityIndex = 0; EntityIndex < Subturn.Entities.Num(); ++EntityIndex)
 		{
 			EntityAnimationPath& Path = GroupQueue.Emplace_GetRef(Subturn.Entities[EntityIndex], MaxDuration - Subturn.Durations[EntityIndex], SubturnIndex);
 
@@ -958,6 +1008,17 @@ void UEntityAnimator::Start(TArray<SubTurn>& InSubturns, int32 Start, int32 End,
 
 	}
 
+	GroupStartTime = WorldContext->TimeSeconds;
+	bIsAnimating = true;
+}
+
+void UEntityAnimator::Start(TArray<EntityAnimationPath>& InGroups, TArray<uint16> InGroupIndices)
+{
+	GroupQueue = MoveTemp(InGroups);
+	GroupIndices = MoveTemp(InGroupIndices);
+
+	Subturns = nullptr;
+	bIsUndo = true;
 	GroupStartTime = WorldContext->TimeSeconds;
 	bIsAnimating = true;
 }

@@ -88,6 +88,17 @@ public:
 	void OnTurnEnd();
 
 	//Main
+	enum GameState {
+		Paused,
+		Waiting,
+		Rewinding,
+		Collapsing,
+		Undoing,
+		Loading,
+		Win
+	};
+
+	GameState State = Loading;
 	TArray<struct Timeline> Timelines;
 	int32 TurnCounter = 0;
 	int32 TimelineCounter = 0;
@@ -272,6 +283,7 @@ public:
 
 	bool bIsAnimating = false;
 	void Start(TArray<SubTurn>& Subturns, int32 Start, int32 End, bool bReverse);
+	void Start(TArray<EntityAnimationPath>& InGroups, TArray<uint16> InGroupIndices);
 
 	TArray<EntityAnimationPath> GroupQueue;
 	TArray<uint16> GroupIndices;
@@ -282,6 +294,5 @@ public:
 	DECLARE_DELEGATE(FOnAnimationsFinished)
 	FOnAnimationsFinished OnAnimationsFinished;
 
-	UGameManager* Temp;
 	float HorizontalSpeed = 0.25, VerticalSpeed = 0.1;
 };
