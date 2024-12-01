@@ -204,6 +204,8 @@ struct SubTurn
 	TArray<AEntity*> Entities;
 	TArray<float> Durations;
 	TArray<struct EntityAnimation> Animations; //Double Entities length
+
+	FRotator PlayerStartRot;
 	
 	TArray<uint16> PathIndices;
 	TArray<GridCoord> Paths;
@@ -236,6 +238,8 @@ struct EntityAnimationPath
 
 	int32 PathIndex = -2;
 	double SubstepTime;
+
+	FRotator StartRot;// = FRotator::ZeroRotator;
 
 	EntityAnimationPath(AEntity* Entity, double StartTime, int32 SubturnIndex)
 		: Entity(Entity), StartTime(StartTime), SubturnIndex(SubturnIndex) {}
