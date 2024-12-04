@@ -71,6 +71,7 @@ public:
 
 	//Loading
 	void LoadLevel();
+	void UnloadLevel();
 
 	//Input
 	EInputStates Buffer;
@@ -112,14 +113,18 @@ public:
 	bool CheckClimbing(
 		AEntity* Entity, const GridCoord& Location, const GridCoord& Delta, 
 		TArray<AEntity*>* Connected = nullptr, int32* Height = nullptr);
+
 	APlayerEntity* SpawnPlayer();
 	ASuperposition* SpawnSuperposition();
+
+	void AddAnimation(SubTurn& Subturn, AEntity* Owner, struct EntityAnimation* Anim, bool bIsStart = true);
 
 	//Rewind
 	AEntity* RewindQueue;
 	void RewindTimeline();
+	void PostRewind();
 
-	void RevaluateSuperpositions();
+	void RevaluateSuperpositions(bool bDoAnim = false);
 
 	int32 CollapseQueue;
 	void CollapseTimeline(int32 Target);
@@ -154,6 +159,7 @@ enum EntityFlags : uint32
 	GOAL				= 1U << 4,
 	REWIND				= 1U << 5,
 	CURRENT_PLAYER		= 1U << 6
+
 };
 
 UCLASS()
@@ -224,7 +230,7 @@ struct SubTurn
 {
 	TArray<AEntity*> Entities;
 	TArray<float> Durations;
-	TArray<struct EntityAnimation> Animations; //Double Entities length
+	TArray<struct EntityAnimation*> Animations; //Double Entities length
 	
 	TArray<uint16> PathIndices;
 	TArray<GridCoord> Paths;
@@ -232,18 +238,29 @@ struct SubTurn
 
 struct EntityAnimation
 {
-	enum AnimationType Type;
+	EntityAnimation* Additional = nullptr;
+	virtual void Play(bool bIsUndo) = 0;
 
-
+	virtual ~EntityAnimation() { delete Additional; }
 };
 
-enum AnimationType
+struct EntityFade : public EntityAnimation
 {
-	PLAYER_IN_SUPER,
-	PLAYER_OUT_SUPER,
-	SUPER_IN,
-	SUPER_OUT,
-	PFX,
+	EntityFade(AEntity* Target, bool bFadeIn) : Target(Target), bFadeIn(bFadeIn) {}
+	AEntity* Target;
+	bool bFadeIn;
+
+	void Play(bool bIsUndo) override;
+};
+
+//Very bad but idk what else
+struct TeleportSuper : public EntityAnimation
+{
+	TeleportSuper(AEntity* Super, FVector Destination) : Super(Super), Destination(Destination) {}
+	AEntity* Super;
+	FVector Destination;
+
+	void Play(bool bIsUndo) override;
 };
 
 //---------------------------------------------------------------------
@@ -252,14 +269,18 @@ struct EntityAnimationPath
 {
 	AEntity* Entity;
 	TArray<FVector> Path;
-	double StartTime;
+	EntityAnimation* StartAnim, *EndAnim;
 	int32 SubturnIndex;
+	double StartTime;
 
 	int32 PathIndex = -2;
 	double SubstepTime;
 
-	EntityAnimationPath(AEntity* Entity, double StartTime, int32 SubturnIndex)
-		: Entity(Entity), StartTime(StartTime), SubturnIndex(SubturnIndex) {}
+	EntityAnimationPath(
+		AEntity* Entity, double StartTime, int32 SubturnIndex, 
+		EntityAnimation* StartAnim = nullptr, EntityAnimation* EndAnim = nullptr)
+		: Entity(Entity), SubturnIndex(SubturnIndex), StartTime(StartTime),
+		StartAnim(StartAnim), EndAnim(EndAnim) {}
 };
 
 UCLASS()
@@ -271,8 +292,6 @@ public:
 	UWorld* WorldContext;
 	FTransform Transform;
 	FVector Offset;
-
-	TArray<SubTurn>* Subturns;
 
 	void Tick(float DeltaTime) override;
 	bool IsTickable() const override { return bIsAnimating; }
@@ -290,6 +309,8 @@ public:
 	int32 QueueIndex;
 	double GroupStartTime;
 	bool bIsUndo;
+
+	TArray<SubTurn>* Subturns;
 
 	DECLARE_DELEGATE(FOnAnimationsFinished)
 	FOnAnimationsFinished OnAnimationsFinished;
