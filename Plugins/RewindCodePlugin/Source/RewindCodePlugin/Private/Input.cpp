@@ -32,9 +32,6 @@ void ARewindPlayerController::SetupInputComponent()
 	RestartAction = NewObject<UInputAction>(this);
 	EscapeAction = NewObject<UInputAction>(this);
 
-	DebugAction = NewObject<UInputAction>(this);
-	DebugSpeed = NewObject<UInputAction>(this);
-
 	InputMapping->MapKey(ForwardMoveAction, EKeys::W);
 	InputMapping->MapKey(ForwardMoveAction, EKeys::Up);
 	InputMapping->MapKey(ForwardMoveAction, EKeys::S).Modifiers.Append({ Swizzle, Negate });
@@ -49,10 +46,6 @@ void ARewindPlayerController::SetupInputComponent()
 	InputMapping->MapKey(RestartAction, EKeys::R);
 	InputMapping->MapKey(EscapeAction, EKeys::Escape);
 
-	InputMapping->MapKey(DebugAction, EKeys::RightMouseButton);
-	InputMapping->MapKey(DebugSpeed, EKeys::MouseScrollUp);
-	InputMapping->MapKey(DebugSpeed, EKeys::MouseScrollDown).Modifiers.Add(Negate);
-
 	//Movement keys needs to be checked on tick for logic to work
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
 	ForwardMoveValue = &EnhancedInputComponent->BindActionValue(ForwardMoveAction);
@@ -63,13 +56,10 @@ void ARewindPlayerController::SetupInputComponent()
 	
 	EnhancedInputComponent->BindAction(UndoAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnUndo);
 
-	//EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnRestart, true);
-	//EnhancedInputComponent->BindAction(EscapeAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnEscape);
+	EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnRestart, true);
+	EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnRestart, false);
 
-	EnhancedInputComponent->BindAction(DebugAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnDebug, true);
-	EnhancedInputComponent->BindAction(DebugAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnDebug, false);
-	EnhancedInputComponent->BindAction(DebugSpeed, ETriggerEvent::Triggered, this, &ARewindPlayerController::OnMouseScroll);
-	ScrollValue = &EnhancedInputComponent->BindActionValue(DebugSpeed);
+	EnhancedInputComponent->BindAction(EscapeAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnEscape);
 
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
 	Subsystem->ClearAllMappings();

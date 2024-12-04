@@ -32,7 +32,7 @@ public:
 };
 
 
-UCLASS(BlueprintType, Blueprintable)
+UCLASS()
 class REWINDCODEPLUGIN_API ARewindPawn : public APawn
 {
 	GENERATED_BODY()
@@ -55,8 +55,8 @@ struct EntityGrid
 	void SetAt(const GridCoord& Location, AEntity* Entity);
 };
 
-UCLASS(BlueprintType)
-class REWINDCODEPLUGIN_API UGameManager : public UObject
+UCLASS()
+class REWINDCODEPLUGIN_API UGameManager : public UObject, public FTickableGameObject
 {
 	GENERATED_BODY()
 
@@ -64,18 +64,28 @@ public:
 	UGameManager();
 
 	UWorld* WorldContext;
+	ARewindGameMode* Gamemode;
 	class ARewindPlayerController* PlayerController;
 	UPROPERTY()
 	UEntityAnimator* Animator;
-	ARewindGameMode* Gamemode;
 
 	//Loading
 	void LoadLevel();
 	void UnloadLevel();
 
 	//Input
+	void Tick(float DeltaTime) override;
+	TStatId GetStatId() const override
+	{
+		RETURN_QUICK_DECLARE_CYCLE_STAT(UEntityAnimator, STATGROUP_Tickables);
+	}
+	bool IsTickable() const override
+	{
+		return RestartPresses != 0;
+	}
+
 	EInputStates Buffer;
-	double InputTimerStart;
+	double InputTimerStart = 0;
 	void HandleMovementInput();
 
 	bool bPassPressed = false;
@@ -83,6 +93,15 @@ public:
 
 	void HandleUndoInput();
 
+	double RestartTimerStart = 0;
+	int32 RestartPresses = 0;
+	bool bRestartPressed = false;
+	bool bRestartSecond = false;
+	void HandleRestartInput(bool bStart);
+
+	void HandleEscapeInput();
+
+	//Misc not really reorganize pls
 	int32 CameraRotation = 0;
 
 	void ProcessTurn(EInputStates Input);
@@ -152,14 +171,14 @@ public:
 //move base entity stuff into seperate file
 enum EntityFlags : uint32
 {
-	MOVEABLE			= 1U,
-	CLIMBABLE			= 1U << 1,
-	PERSISTENT			= 1U << 2,
-	SUPER				= 1U << 3,
-	GOAL				= 1U << 4,
-	REWIND				= 1U << 5,
-	CURRENT_PLAYER		= 1U << 6
-
+	MOVEABLE			= 1,
+	CLIMBABLE			= 1 << 1,
+	PERSISTENT			= 1 << 2,
+	SUPER				= 1 << 3,
+	GOAL				= 1 << 4,
+	REWIND				= 1 << 5,
+	CARRIED				= 1 << 6,
+	CURRENT_PLAYER		= 1 << 7
 };
 
 UCLASS()
@@ -314,6 +333,4 @@ public:
 
 	DECLARE_DELEGATE(FOnAnimationsFinished)
 	FOnAnimationsFinished OnAnimationsFinished;
-
-	float HorizontalSpeed = 0.25, VerticalSpeed = 0.1;
 };

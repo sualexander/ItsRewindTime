@@ -14,12 +14,12 @@ struct FInputActionValue;
 enum EInputStates
 {
 	NONE	= 0,
-	W		= 1U,
-	S		= 1U << 1,
-	A		= 1U << 2,
-	D		= 1U << 3,
-	PASS	= 1U << 4,
-	UNDO	= 1U << 5
+	W		= 1,
+	S		= 1 << 1,
+	A		= 1 << 2,
+	D		= 1 << 3,
+	PASS	= 1 << 4,
+	UNDO	= 1 << 5
 };
 
 UCLASS(Blueprintable, BlueprintType)
@@ -59,37 +59,17 @@ public:
 
 	DECLARE_DELEGATE_OneParam(FOnPassPressed, bool)
 	FOnPassPressed OnPassPressed;
-
 	void OnPassTurn(bool bStart) { OnPassPressed.Execute(bStart); }
 
 	DECLARE_DELEGATE(FOnUndoPressed)
 	FOnUndoPressed OnUndoPressed;
-
 	void OnUndo() { OnUndoPressed.Execute(); }
 
-	
-	//Refactor pls
-	UPROPERTY()
-	UInputAction* DebugAction;
-	UPROPERTY()
-	UInputAction* DebugSpeed;
+	DECLARE_DELEGATE_OneParam(FOnRestartPressed, bool)
+	FOnRestartPressed OnRestartPressed;
+	void OnRestart(bool bStart) { OnRestartPressed.Execute(bStart); }
 
-	bool bIsDebugging = false;
-	void OnDebug(bool bDebug) 
-	{ 
-		bIsDebugging = bDebug; 
-		//GetPawn()->GetRootComponent()->SetMobility(bDebug ? EComponentMobility::Movable : EComponentMobility::Static);
-	}
-
-	struct FEnhancedInputActionValueBinding* ScrollValue;
-	float SpeedMultiplier = 1;
-	void OnMouseScroll()
-	{
-		SpeedMultiplier = FMath::Clamp(SpeedMultiplier + (ScrollValue->GetValue().Get<float>() * 0.5), 0, 10);
-		UE_LOG(LogTemp, Warning, TEXT("%f"), SpeedMultiplier);
-	}
-
-	//void OnRestart(bool b);
-	
-	//void OnEscape();
+	DECLARE_DELEGATE(FOnEscapePressed)
+	FOnEscapePressed OnEscapePressed;
+	void OnEscape() { OnEscapePressed.Execute(); }
 };

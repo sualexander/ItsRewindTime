@@ -44,7 +44,7 @@ class REWINDCODEPLUGIN_API ARewindWorldSettings : public AWorldSettings
 
 public:
 	UPROPERTY(EditAnywhere, meta = (DisplayName = "Minimum Height"))
-	int8 HeightMin = -1;
+	int8 HeightMin = 0;
 
 	UPROPERTY()
 	FIntVector Dimensions;

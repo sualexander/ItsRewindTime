@@ -48,6 +48,8 @@ void ARewindGameMode::PostLogin(APlayerController* InController)
 	Controller->OnInputChanged.BindUObject(GameManager, &UGameManager::HandleMovementInput);
 	Controller->OnPassPressed.BindUObject(GameManager, &UGameManager::HandlePassInput);
 	Controller->OnUndoPressed.BindUObject(GameManager, &UGameManager::HandleUndoInput);
+	Controller->OnRestartPressed.BindUObject(GameManager, &UGameManager::HandleRestartInput);
+	Controller->OnEscapePressed.BindUObject(GameManager, &UGameManager::HandleEscapeInput);
 
 	//Need to have actual custom camera pawn instantiation here
 	AActor* Camera = UGameplayStatics::GetActorOfClass(GetWorld(), ACameraActor::StaticClass());
@@ -61,7 +63,7 @@ ARewindPawn::ARewindPawn()
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("CameraComponent"));
 }
 
-//----------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------------------------------
 
 UGameManager::UGameManager()
 {
@@ -179,6 +181,9 @@ void UGameManager::UnloadLevel()
 	}
 }
 
+//INPUT HANDLING
+//-----------------------------------------------------------------------------------------------------------
+
 void UGameManager::HandleMovementInput()
 {
 	if (State == Waiting) {
@@ -270,6 +275,74 @@ void UGameManager::HandleUndoInput()
 		--TurnCounter;
 	}
 }
+
+void UGameManager::HandleRestartInput(bool bStart)
+{
+	if (State == Waiting) {
+		bRestartPressed = bStart;
+		//First time pressing it
+		if (bStart && RestartPresses == 0) {
+			RestartTimerStart = WorldContext->RealTimeSeconds;
+			++RestartPresses;
+			return;
+		}
+		//Second (or third for that matter) time pressing it
+		if (bStart && RestartPresses >= 1) {
+			++RestartPresses;
+			return;
+		}
+		//Releasing it
+		if (!bStart) {
+			//bHasPassed = false;
+			return;
+		}
+	}
+}
+
+void UGameManager::Tick(float DeltaTime) {
+	if (WorldContext->RealTimeSeconds - RestartTimerStart > 0.25) {
+		//If at 0.3 seconds it's only pressed once, do normal
+		if (RestartPresses <= 1) {
+			LOG("I am just restarded %d", TurnCounter);
+			if (TurnCounter > 0) {
+				Timeline& Timeline = Timelines[TimelineCounter];
+				TurnCounter = 0;
+
+				//Remove all the subturns and headers of this timeline
+				Timeline.Subturns.RemoveAt(0, Timeline.Subturns.Num(), true);
+				Timeline.Headers.RemoveAt(0, Timeline.Headers.Num(), true);
+
+				//Update Grid
+				for (int32 i = 0; i < Timeline.Entities.Num(); ++i)
+				{
+					AEntity* Entity = Timeline.Entities[i];
+					Grid.SetAt(Entity->GridLocation, nullptr);
+					Entity->GridLocation = StartGridLocation;
+					Grid.SetAt(Entity->GridLocation, Entity);
+					Entity->SetActorLocation(GetWorldLocation(Entity));
+				}
+				RevaluateSuperpositions();
+			}
+		}
+		//else do hard reset 
+		else {
+			LOG("I am really restarded %d", TurnCounter);
+		}
+
+		//Set RestartTimeStart to max
+		RestartTimerStart = MAX_dbl;
+		//Set number of times pressed to zero
+		RestartPresses = 0;
+	}
+}
+
+void UGameManager::HandleEscapeInput()
+{
+
+}
+
+//GAME LOOP
+//----------------------------------------------------------------------------------------------------------------------------------
 
 void UGameManager::OnTurnEnd()
 {
@@ -642,6 +715,9 @@ void UGameManager::UpdateEntityPosition(SubTurn& Subturn, AEntity* Entity, const
 	}
 }
 
+//GAME LOOP AUXILIARY
+//----------------------------------------------------------------------------------------------------------------
+
 bool UGameManager::CheckSuperposition(AEntity* To, AEntity* From)
 {
 	if (From->Flags & SUPER) {
@@ -914,6 +990,9 @@ void UGameManager::RevaluateSuperpositions(bool bDoAnim)
 	}
 }
 
+//HELPERS
+//-----------------------------------------------------------------------------------------------------------
+
 APlayerEntity* UGameManager::SpawnPlayer()
 {
 	APlayerEntity* Player = WorldContext->SpawnActor<APlayerEntity>(PlayerBlueprint, GetWorldLocation(StartGridLocation), Rotation);
@@ -990,7 +1069,8 @@ void UGameManager::VisualizeGrid()
 	}
 }
 
-//-----------------------------------------------------------------------------------------------------------
+//GRID
+//------------------------------------------------------------------------------------------------------------
 
 AEntity* EntityGrid::QueryAt(const GridCoord& Location, bool* bIsValid)
 {
@@ -1020,7 +1100,8 @@ void EntityGrid::SetAt(const GridCoord& Location, AEntity* Entity)
 	Grid[Location.X + (Location.Y * Dimensions.X) + (Location.Z * Dimensions.X * Dimensions.Y)] = Entity;
 }
 
-//-----------------------------------------------------------------------------
+//ANIMATOR
+//------------------------------------------------------------------------------------------------------------------------------------------
 
 void UEntityAnimator::Start(TArray<SubTurn>& InSubturns, int32 Start, int32 End, bool bReverse)
 {
