@@ -365,6 +365,8 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	{
 		Timelines[TimelineCounter].Entities.Emplace(Player);
 		Timelines[TimelineCounter].Locations.Emplace(Player->GridLocation);
+
+		Player->Flags &= ~CARRIED;
 	}
 
 	TArray<TPair<AEntity*, int32>> CollapseCandidates;
@@ -512,16 +514,13 @@ void UGameManager::EvaluateSubTurn(SubTurnHeader& Header, SubTurn& Subturn)
 			AEntity* Front = Grid.QueryAt(EntityOrigin + Header.Move);
 			if (Front && !(Front->Flags & MOVEABLE)) break;
 
+			Up->Flags |= CARRIED;
 			UpdateEntityPosition(Subturn, Up, Header.Move);
 
 			for (;;)
 			{
 				AEntity* Below = Grid.QueryAt(Up->GridLocation + DownVector);
 				if (Below) break;
-				if (Up->GridLocation.Z - 1 <= HeightMin) {
-					LOG("Should this even ever print??? Fell off da world");
-					break;
-				}
 
 				UpdateEntityPosition(Subturn, Up, DownVector);
 			}
@@ -980,7 +979,7 @@ void UGameManager::VisualizeGrid()
 		Index -= (Z * (Grid.Dimensions.X * Grid.Dimensions.Y));
 		int32 Y = Index / Grid.Dimensions.X;
 		int32 X = Index % Grid.Dimensions.X;
-
+		
 		AEntity* Entity = Grid.Grid[i];
 		if (!Entity || !(Entity->Flags & MOVEABLE)) {
 			DrawDebugString(WorldContext, GetWorldLocation(GridCoord(X, Y, Z)), FString::FromInt(i), NULL, FColor(0, 0, 0, 150));
@@ -1101,6 +1100,15 @@ void UEntityAnimator::Tick(float DeltaTime)
 				Animation.PathIndex = 0;
 				Animation.SubstepTime = CurrentTime;
 
+				if (APlayerEntity* Player = Cast<APlayerEntity>(Animation.Entity)) {
+					if (!(Player->Flags & CARRIED)) {
+						FVector Direction = Animation.Path.Last() - Animation.Path[0];
+						FRotator Rotation = FRotator(0, FMath::RadiansToDegrees(Direction.HeadingAngle()) - 90 + (bIsUndo * 180), 0);
+						Player->SetActorRotation(Rotation);
+						if (Player->Superposition) Player->Superposition->SetActorRotation(Rotation);
+					}
+				}
+
 				if (bIsUndo) {
 					EntityAnimation* Anim = Animation.EndAnim;
 					while (Anim)
@@ -1109,23 +1117,26 @@ void UEntityAnimator::Tick(float DeltaTime)
 						Anim = Anim->Additional;
 					}
 				}
-				else if (Animation.StartAnim) {
-					EntityAnimation* Anim = Animation.StartAnim;
-					while (Anim)
-					{
-						Anim->Play(bIsUndo);
-						Anim = Anim->Additional;
+				else {
+					if (Animation.StartAnim) {
+						EntityAnimation* Anim = Animation.StartAnim;
+						while (Anim)
+						{
+							Anim->Play(bIsUndo);
+							Anim = Anim->Additional;
+						}
 					}
 				}
 			}
 			else continue;
 		}	
 
-		float MoveTime = bIsUndo ? 0.15 : 0.25;//(Animation.Path[Animation.PathIndex] - Animation.StartLocation).Z < 0 ? VerticalSpeed : HorizontalSpeed;
-		//MoveTime *= Temp->PlayerController->SpeedMultiplier;
+		int32 PathEnd = Animation.PathIndex == Animation.Path.Num() - 1 ? Animation.Path.Num() - 1 : Animation.PathIndex + 1;
+
+		float MoveTime = (Animation.Path[PathEnd] - Animation.Path[Animation.PathIndex]).Z < 0 ? 0.2 : 0.25;
+		MoveTime *= bIsUndo ? 0.5 : 1;
 		float Alpha = FMath::Clamp((CurrentTime - Animation.SubstepTime) / MoveTime, 0, 1);
 
-		int32 PathEnd = Animation.PathIndex == Animation.Path.Num() - 1 ? Animation.Path.Num() - 1 : Animation.PathIndex + 1;
 		Animation.Entity->SetActorLocation(FMath::Lerp(Animation.Path[Animation.PathIndex], Animation.Path[PathEnd], Alpha));
 
 		if (Animation.Entity->GetActorLocation().Equals(Animation.Path[PathEnd])) {
