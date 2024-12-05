@@ -20,6 +20,14 @@ class REWINDCODEPLUGIN_API ARewindMenuMode : public AGameModeBase
 	GENERATED_BODY()
 
 public:
+	ARewindMenuMode();
+	void PostLogin(APlayerController* Controller) override;
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnMouseClicked();
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnEscape();
 };
 
 UCLASS()
@@ -29,14 +37,19 @@ class REWINDCODEPLUGIN_API ARewindGameMode : public AGameModeBase
 
 public:
 	ARewindGameMode();
-
 	void PostLogin(APlayerController* Controller) override;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	UPROPERTY()
 	UGameManager* GameManager;
 
 	UFUNCTION(BlueprintImplementableEvent)
-	void TurnChanged(int32 TurnCount);
+	void OnTurnChanged(bool bAdvance, int32 TurnCounter);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnRewind(bool bStart, int32 NumTurns = 0, ACameraActor* Camera = nullptr);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnCollapse();
 };
 
 
@@ -215,9 +228,6 @@ class REWINDCODEPLUGIN_API APlayerEntity : public AEntity
 public:
 	ASuperposition* Superposition;
 	bool bInSuperposition = false;
-
-	//UFUNCTION(BlueprintImplementableEvent)
-	//void UpdateVisuals(int32 Type) {}
 };
 
 UCLASS(Blueprintable)

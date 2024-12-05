@@ -50,6 +50,8 @@ public:
 	UInputAction* RestartAction;
 	UPROPERTY()
 	UInputAction* EscapeAction;
+	UPROPERTY()
+	UInputAction* MouseAction;
 
 	FEnhancedInputActionValueBinding* ForwardMoveValue, *SideMoveValue;
 
@@ -62,21 +64,25 @@ public:
 
 	DECLARE_DELEGATE_OneParam(FOnPassPressed, bool)
 	FOnPassPressed OnPassPressed;
-	void OnPassTurn(bool bStart) { OnPassPressed.Execute(bStart); }
+	void OnPassTurn(bool bStart) { OnPassPressed.ExecuteIfBound(bStart); }
 
 	DECLARE_DELEGATE_OneParam(FOnRotateCamera, float)
 	FOnRotateCamera OnRotateCamera;
-	void OnRotate(const FInputActionValue& Value) { OnRotateCamera.Execute(Value.Get<float>()); }
+	void OnRotate(const FInputActionValue& Value) { OnRotateCamera.ExecuteIfBound(Value.Get<float>()); }
 
 	DECLARE_DELEGATE(FOnUndoPressed)
 	FOnUndoPressed OnUndoPressed;
-	void OnUndo() { OnUndoPressed.Execute(); }
+	void OnUndo() { OnUndoPressed.ExecuteIfBound(); }
 
 	DECLARE_DELEGATE_OneParam(FOnRestartPressed, bool)
 	FOnRestartPressed OnRestartPressed;
-	void OnRestart(bool bStart) { OnRestartPressed.Execute(bStart); }
+	void OnRestart(bool bStart) { OnRestartPressed.ExecuteIfBound(bStart); }
 
 	DECLARE_DELEGATE(FOnEscapePressed)
 	FOnEscapePressed OnEscapePressed;
-	void OnEscape() { OnEscapePressed.Execute(); }
+	void OnEscape() { OnEscapePressed.ExecuteIfBound(); }
+
+	DECLARE_DELEGATE(FOnMouseClick)
+	FOnMouseClick OnMouseClicked;
+	void OnMouseClick() { OnMouseClicked.ExecuteIfBound(); }
 };

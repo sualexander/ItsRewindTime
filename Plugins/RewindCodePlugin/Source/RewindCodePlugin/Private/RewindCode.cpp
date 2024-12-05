@@ -31,6 +31,21 @@ DEFINE_LOG_CATEGORY_STATIC(RewindGame, Log, All);
 #pragma warning(disable: 4426) //line below suddenly started throwing compile error so...
 #pragma optimize("", off) //remove when done or add #if WITH_EDITOR
 
+
+ARewindMenuMode::ARewindMenuMode()
+{
+	PlayerControllerClass = ARewindPlayerController::StaticClass();
+}
+
+void ARewindMenuMode::PostLogin(APlayerController* InController)
+{
+	AGameModeBase::PostLogin(InController);
+
+	ARewindPlayerController* Controller = Cast<ARewindPlayerController>(InController);
+	Controller->OnMouseClicked.BindUObject(this, &ARewindMenuMode::OnMouseClicked);
+	Controller->OnEscapePressed.BindUObject(this, &ARewindMenuMode::OnEscape);
+}
+
 ARewindGameMode::ARewindGameMode()
 {
 	PlayerControllerClass = ARewindPlayerController::StaticClass();
@@ -301,11 +316,15 @@ void UGameManager::HandleUndoInput()
 		Timeline.Subturns.RemoveAt(Timeline.Subturns.Num() - (TimelineCounter + 1), TimelineCounter + 1, true);
 		--TurnCounter;
 	}
+
+	Gamemode->OnTurnChanged(false, TurnCounter);
 }
 
 void UGameManager::HandleRestartInput(bool bStart)
 {
 	if (State == Waiting) {
+		Gamemode->OnTurnChanged(false, 0); //TODO: not sure about this
+
 		bRestartPressed = bStart;
 		//First time pressing it
 		if (bStart && RestartPresses == 0) {
@@ -354,6 +373,7 @@ void UGameManager::Tick(float DeltaTime) {
 		//else do hard reset 
 		else {
 			LOG("I am really restarded %d", TurnCounter);
+			//TODO: Gamemode->something
 		}
 
 		//Set RestartTimeStart to max
@@ -456,6 +476,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	Timeline& Timeline = Timelines[TimelineCounter];
 	Timeline.Headers.Emplace(CurrentPlayer, MoveInput); //Create header for only the corresponding timeline's player
 	++TurnCounter;
+	Gamemode->OnTurnChanged(true, TurnCounter);
 
 	//TODO: This is temporary, might need to restructure SubTurn when we hv more entity types
 	//Because we only have players for now
@@ -847,10 +868,13 @@ void UGameManager::RewindTimeline()
 	}
 
 	Animator->Start(AnimationGroups, GroupIndices);
+	Gamemode->OnRewind(true, TurnCounter, Cameras[CameraIndex]);
 }
 
 void UGameManager::PostRewind()
 {
+	Gamemode->OnRewind(false);
+
 	//Start new timeline
 	Timelines[TimelineCounter].Rewinder = RewindQueue;
 	Timelines[TimelineCounter].NumTurns = TurnCounter;
@@ -887,6 +911,7 @@ void UGameManager::PostRewind()
 
 void UGameManager::CollapseTimeline(int32 Target)
 {
+	Gamemode->OnCollapse();
 	State = Collapsing;
 	LOG("Collapsing to timeline %d", Target);
 

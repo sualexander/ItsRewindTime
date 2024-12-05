@@ -33,6 +33,7 @@ void ARewindPlayerController::SetupInputComponent()
 	UndoAction = NewObject<UInputAction>(this);
 	RestartAction = NewObject<UInputAction>(this);
 	EscapeAction = NewObject<UInputAction>(this);
+	MouseAction = NewObject<UInputAction>(this);
 
 	InputMapping->MapKey(ForwardMoveAction, EKeys::W);
 	InputMapping->MapKey(ForwardMoveAction, EKeys::Up);
@@ -49,6 +50,8 @@ void ARewindPlayerController::SetupInputComponent()
 	InputMapping->MapKey(UndoAction, EKeys::LeftShift);
 	InputMapping->MapKey(RestartAction, EKeys::R);
 	InputMapping->MapKey(EscapeAction, EKeys::Escape);
+	InputMapping->MapKey(EscapeAction, EKeys::P); //TODO: only for debug
+	InputMapping->MapKey(MouseAction, EKeys::LeftMouseButton);
 
 	//Movement keys needs to be checked on tick for logic to work
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent);
@@ -62,6 +65,7 @@ void ARewindPlayerController::SetupInputComponent()
 	EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnRestart, true);
 	EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnRestart, false);
 	EnhancedInputComponent->BindAction(EscapeAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnEscape);
+	EnhancedInputComponent->BindAction(MouseAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnMouseClick);
 
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
 	Subsystem->ClearAllMappings();
@@ -98,5 +102,5 @@ void ARewindPlayerController::Tick(float DeltaTime)
 
 	CurrentInputState = NewInputState;
 	NewestInput = Stack.IsEmpty() ? NONE : Stack.Last();
-	OnInputChanged.Execute();
+	OnInputChanged.ExecuteIfBound();
 }
