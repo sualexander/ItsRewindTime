@@ -27,6 +27,8 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	UGameManager* GameManager;
 
+
+
 	UFUNCTION(BlueprintImplementableEvent)
 	void TurnChanged(int32 TurnCount);
 };
@@ -84,25 +86,30 @@ public:
 		return RestartPresses != 0;
 	}
 
+	void HandleMovementInput();
 	EInputStates Buffer;
 	double InputTimerStart = 0;
-	void HandleMovementInput();
 
-	bool bPassPressed = false;
 	void HandlePassInput(bool bStart);
+	bool bPassPressed = false;
+
+	void HandleCameraInput(float Direction);
+	void OnCameraBlendComplete();
+	TArray<class ACameraActor*> Cameras;
+	int32 CameraIndex = 0;
+	double RedundancyTimer = 0;
 
 	void HandleUndoInput();
 
+	void HandleRestartInput(bool bStart);
 	double RestartTimerStart = 0;
 	int32 RestartPresses = 0;
 	bool bRestartPressed = false;
 	bool bRestartSecond = false;
-	void HandleRestartInput(bool bStart);
 
 	void HandleEscapeInput();
 
-	//Misc not really reorganize pls
-	int32 CameraRotation = 0;
+	//
 
 	void ProcessTurn(EInputStates Input);
 	void OnTurnEnd();

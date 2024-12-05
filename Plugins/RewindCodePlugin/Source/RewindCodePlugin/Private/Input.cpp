@@ -28,6 +28,8 @@ void ARewindPlayerController::SetupInputComponent()
 	SideMoveAction->ValueType = EInputActionValueType::Axis2D;
 
 	PassTurnAction = NewObject<UInputAction>(this);
+	RotateCameraAction = NewObject<UInputAction>(this);
+	RotateCameraAction->ValueType = EInputActionValueType::Axis1D;
 	UndoAction = NewObject<UInputAction>(this);
 	RestartAction = NewObject<UInputAction>(this);
 	EscapeAction = NewObject<UInputAction>(this);
@@ -42,6 +44,8 @@ void ARewindPlayerController::SetupInputComponent()
 	InputMapping->MapKey(SideMoveAction, EKeys::Right).Modifiers.Append({ Swizzle, Negate });
 
 	InputMapping->MapKey(PassTurnAction, EKeys::SpaceBar);
+	InputMapping->MapKey(RotateCameraAction, EKeys::Q);
+	InputMapping->MapKey(RotateCameraAction, EKeys::E).Modifiers.Emplace(Negate);
 	InputMapping->MapKey(UndoAction, EKeys::LeftShift);
 	InputMapping->MapKey(RestartAction, EKeys::R);
 	InputMapping->MapKey(EscapeAction, EKeys::Escape);
@@ -53,13 +57,11 @@ void ARewindPlayerController::SetupInputComponent()
 
 	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnPassTurn, true);
 	EnhancedInputComponent->BindAction(PassTurnAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnPassTurn, false);
-	
+	EnhancedInputComponent->BindAction(RotateCameraAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnRotate);	
 	EnhancedInputComponent->BindAction(UndoAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnUndo);
-
 	EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnRestart, true);
 	EnhancedInputComponent->BindAction(RestartAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnRestart, false);
-
-	EnhancedInputComponent->BindAction(EscapeAction, ETriggerEvent::Completed, this, &ARewindPlayerController::OnEscape);
+	EnhancedInputComponent->BindAction(EscapeAction, ETriggerEvent::Started, this, &ARewindPlayerController::OnEscape);
 
 	UEnhancedInputLocalPlayerSubsystem* Subsystem = GetLocalPlayer()->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>();
 	Subsystem->ClearAllMappings();

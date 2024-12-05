@@ -42,20 +42,18 @@ void ARewindGameMode::PostLogin(APlayerController* InController)
 	AGameModeBase::PostLogin(InController);
 
 	GameManager = NewObject<UGameManager>(this);
-	GameManager->PlayerController = Cast<ARewindPlayerController>(InController);
 	GameManager->Gamemode = this;
+	GameManager->PlayerController = Cast<ARewindPlayerController>(InController);
+
 	ARewindPlayerController* Controller = GameManager->PlayerController;
 	Controller->OnInputChanged.BindUObject(GameManager, &UGameManager::HandleMovementInput);
 	Controller->OnPassPressed.BindUObject(GameManager, &UGameManager::HandlePassInput);
+	Controller->OnRotateCamera.BindUObject(GameManager, &UGameManager::HandleCameraInput);
 	Controller->OnUndoPressed.BindUObject(GameManager, &UGameManager::HandleUndoInput);
 	Controller->OnRestartPressed.BindUObject(GameManager, &UGameManager::HandleRestartInput);
 	Controller->OnEscapePressed.BindUObject(GameManager, &UGameManager::HandleEscapeInput);
 
-	//Need to have actual custom camera pawn instantiation here
-	AActor* Camera = UGameplayStatics::GetActorOfClass(GetWorld(), ACameraActor::StaticClass());
-	if (ACameraActor* Cam = Cast<ACameraActor>(Camera)) {
-		Controller->SetViewTarget(Cam);
-	}
+	GameManager->LoadLevel();
 }
 
 ARewindPawn::ARewindPawn()
@@ -80,8 +78,6 @@ UGameManager::UGameManager()
 	static ConstructorHelpers::FClassFinder<ASuperposition> SuperBP(TEXT("/Game/Blueprints/BP_Superposition"));
 	PlayerBlueprint = PlayerBP.Class;
 	SuperBlueprint = SuperBP.Class;
-
-	LoadLevel();
 }
 
 void UGameManager::LoadLevel()
@@ -151,9 +147,22 @@ void UGameManager::LoadLevel()
 		}	
 	}
 
-	//TODO: a lot
-	//init 4 cameras, 
+	//Initialize cameras
+	for (TActorIterator<ACameraActor> Itr(WorldContext); Itr; ++Itr)
+	{
+		if (Itr) Cameras.Emplace(*Itr);
+	}
+	FVector Center = Transform.GetLocation();
+	Cameras.Sort([&Center](const ACameraActor& A, const ACameraActor& B)
+		{
+			float AngleA = FMath::Atan2(A.GetActorLocation().Y - Center.Y, A.GetActorLocation().X - Center.X);
+			float AngleB = FMath::Atan2(B.GetActorLocation().Y - Center.Y, B.GetActorLocation().X - Center.X);
+			return AngleA < AngleB;
+		});
+	PlayerController->SetViewTarget(Cameras[0]);
+	PlayerController->PlayerCameraManager->OnBlendComplete().AddUObject(this, &UGameManager::OnCameraBlendComplete);
 
+	//Data
 	APlayerEntity* Player = SpawnPlayer();
 	Grid.SetAt(StartGridLocation, Player);
 
@@ -205,10 +214,28 @@ void UGameManager::HandlePassInput(bool bStart)
 	}
 }
 
+void UGameManager::HandleCameraInput(float Direction)
+{
+	if (State == Waiting) {
+		State = Loading;
+		CameraIndex = (CameraIndex + FMath::RoundToInt(Direction) + 4) % 4;
+		RedundancyTimer = WorldContext->TimeSeconds;
+		PlayerController->SetViewTargetWithBlend(Cameras[CameraIndex], 0.5);
+	}
+	else if (WorldContext->TimeSeconds - RedundancyTimer > 5) {
+		LOG("OnCameraBlendComplete failed, fallback to timer :(");
+		State = Waiting;
+		HandleCameraInput(Direction);
+	}
+}
+
+void UGameManager::OnCameraBlendComplete()
+{
+	State = Waiting;
+}
+
 void UGameManager::HandleUndoInput()
 {
-	LOG("Undo Input");
-	//Need to handle game states in general
 	if (State != Waiting) return;
 	if (Animator->bIsAnimating) return;
 
@@ -321,7 +348,7 @@ void UGameManager::Tick(float DeltaTime) {
 					Grid.SetAt(Entity->GridLocation, Entity);
 					Entity->SetActorLocation(GetWorldLocation(Entity));
 				}
-				RevaluateSuperpositions();
+				RevaluateSuperpositions(true);
 			}
 		}
 		//else do hard reset 
@@ -406,7 +433,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		//TODO: need visual cue
 		LOG("Passed turn %d", TurnCounter + 1);
 	}
-	int32 Turns = (FMath::RoundToInt((Rotation.Yaw + CameraRotation) / 90) % 4 + 4) % 4;
+	int32 Turns = (FMath::RoundToInt((Rotation.Yaw + (CameraIndex * 90)) / 90) % 4 + 4) % 4;
 	switch (Turns)
 	{
 	case 0: break;
@@ -910,8 +937,7 @@ void UGameManager::CollapseTimeline(int32 Target)
 	{
 		Entity->SetActorLocation(GetWorldLocation(Entity));
 	}
-
-	RevaluateSuperpositions();
+	RevaluateSuperpositions(true);
 
 	//Spawn new persistent "superpositions"
 	for (const GridCoord& Location : Persistent)

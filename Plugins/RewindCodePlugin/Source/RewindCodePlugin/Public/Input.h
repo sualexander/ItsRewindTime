@@ -10,6 +10,7 @@
 
 class UInputAction;
 struct FInputActionValue;
+struct FEnhancedInputActionValueBinding;
 
 enum EInputStates
 {
@@ -42,13 +43,15 @@ public:
 	UPROPERTY()
 	UInputAction* PassTurnAction;
 	UPROPERTY()
+	UInputAction* RotateCameraAction;
+	UPROPERTY()
 	UInputAction* UndoAction;
 	UPROPERTY()
 	UInputAction* RestartAction;
 	UPROPERTY()
 	UInputAction* EscapeAction;
 
-	struct FEnhancedInputActionValueBinding* ForwardMoveValue, *SideMoveValue;
+	FEnhancedInputActionValueBinding* ForwardMoveValue, *SideMoveValue;
 
 	uint32 CurrentInputState = 0;
 	EInputStates NewestInput = NONE;
@@ -60,6 +63,10 @@ public:
 	DECLARE_DELEGATE_OneParam(FOnPassPressed, bool)
 	FOnPassPressed OnPassPressed;
 	void OnPassTurn(bool bStart) { OnPassPressed.Execute(bStart); }
+
+	DECLARE_DELEGATE_OneParam(FOnRotateCamera, float)
+	FOnRotateCamera OnRotateCamera;
+	void OnRotate(const FInputActionValue& Value) { OnRotateCamera.Execute(Value.Get<float>()); }
 
 	DECLARE_DELEGATE(FOnUndoPressed)
 	FOnUndoPressed OnUndoPressed;
