@@ -35,6 +35,9 @@ class REWINDCODEPLUGIN_API AGridActor : public AStaticMeshActor
 public:
 	UPROPERTY()
 	GridType Type;
+
+	UPROPERTY(EditAnywhere)
+	int32 PuzzleIndex = -1;
 };
 
 UCLASS()

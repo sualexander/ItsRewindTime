@@ -32,6 +32,20 @@ DEFINE_LOG_CATEGORY_STATIC(RewindGame, Log, All);
 #pragma optimize("", off) //remove when done or add #if WITH_EDITOR
 
 
+void URewindGameInstance::OnGamemodeInit(UGameManager* GameManager)
+{
+	GameManager->LoadLevel();
+	GameManager->bIsOverworld = GetWorld() == OverworldLevel.Get();
+	LOG("%s", GameManager->bIsOverworld ? TEXT("True") : TEXT("False"));
+}
+
+void URewindGameInstance::EnterPuzzle()
+{
+
+}
+
+//----------------------------------------------------------------------------------------------------------------
+
 ARewindMenuMode::ARewindMenuMode()
 {
 	PlayerControllerClass = ARewindPlayerController::StaticClass();
@@ -45,6 +59,8 @@ void ARewindMenuMode::PostLogin(APlayerController* InController)
 	Controller->OnMouseClicked.BindUObject(this, &ARewindMenuMode::OnMouseClicked);
 	Controller->OnEscapePressed.BindUObject(this, &ARewindMenuMode::OnEscape);
 }
+
+//------------------------------------------------------------------------------------------------------------
 
 ARewindGameMode::ARewindGameMode()
 {
@@ -68,7 +84,7 @@ void ARewindGameMode::PostLogin(APlayerController* InController)
 	Controller->OnRestartPressed.BindUObject(GameManager, &UGameManager::HandleRestartInput);
 	Controller->OnEscapePressed.BindUObject(GameManager, &UGameManager::HandleEscapeInput);
 
-	GameManager->LoadLevel();
+	StaticCast<URewindGameInstance*>(GetGameInstance())->OnGamemodeInit(GameManager);
 }
 
 ARewindPawn::ARewindPawn()
@@ -787,7 +803,10 @@ bool UGameManager::CheckClimbing(AEntity* Entity, const GridCoord& Location, con
 	for (GridCoord GridLocation = Location;;)
 	{
 		AEntity* Front = Grid.QueryAt(GridLocation += Delta);
-		if (!Front) return true;
+		if (!Front) {
+			if (!bIsOverworld) return true;
+			return Grid.QueryAt(GridLocation + DownVector) != nullptr;
+		}
 		if (!(Front->Flags & MOVEABLE)) {
 			if (Grid.QueryAt(Location + Delta)->Flags & CLIMBABLE && !Grid.QueryAt(Location + UpVector)) {
 				if (Connected) {

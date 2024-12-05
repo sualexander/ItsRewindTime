@@ -15,6 +15,20 @@ enum EInputStates;
 using GridCoord = UE::Math::TIntVector3<int8>;
 
 UCLASS()
+class REWINDCODEPLUGIN_API URewindGameInstance : public UGameInstance
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(EditAnywhere)
+	TSoftObjectPtr<UWorld> OverworldLevel;
+
+	void OnGamemodeInit(UGameManager* GameManager);
+
+	void EnterPuzzle();
+};
+
+UCLASS()
 class REWINDCODEPLUGIN_API ARewindMenuMode : public AGameModeBase
 {
 	GENERATED_BODY()
@@ -51,7 +65,6 @@ public:
 	UFUNCTION(BlueprintImplementableEvent)
 	void OnCollapse();
 };
-
 
 UCLASS()
 class REWINDCODEPLUGIN_API ARewindPawn : public APawn
@@ -93,6 +106,7 @@ public:
 	//Loading
 	void LoadLevel();
 	void UnloadLevel();
+	bool bIsOverworld;
 
 	//Input
 	void Tick(float DeltaTime) override;
