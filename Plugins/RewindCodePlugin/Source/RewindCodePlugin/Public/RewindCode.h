@@ -15,6 +15,14 @@ enum EInputStates;
 using GridCoord = UE::Math::TIntVector3<int8>;
 
 UCLASS()
+class REWINDCODEPLUGIN_API ARewindMenuMode : public AGameModeBase
+{
+	GENERATED_BODY()
+
+public:
+};
+
+UCLASS()
 class REWINDCODEPLUGIN_API ARewindGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
@@ -26,8 +34,6 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	UGameManager* GameManager;
-
-
 
 	UFUNCTION(BlueprintImplementableEvent)
 	void TurnChanged(int32 TurnCount);
