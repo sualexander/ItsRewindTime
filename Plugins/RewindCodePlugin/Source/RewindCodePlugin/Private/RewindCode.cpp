@@ -86,6 +86,7 @@ void ARewindGameMode::PostLogin(APlayerController* InController)
 	Controller->OnMouseClicked.BindUObject(GameManager, &UGameManager::HandleMouseClick);
 
 	StaticCast<URewindGameInstance*>(GetGameInstance())->OnGamemodeInit(GameManager);
+	isOverworld = StaticCast<URewindGameInstance*>(GetGameInstance())->OverworldLevel.Get() == GetWorld();
 }
 
 ARewindPawn::ARewindPawn()
@@ -330,6 +331,8 @@ void UGameManager::HandleUndoInput()
 		RevaluateSuperpositions(true);
 		Timelines.RemoveAt(Timelines.Num() - 1);
 
+		//include this
+		Gamemode->OnTurnZeroUndo(true);
 		//Do special undo animation
 		OnTurnEnd();
 	}
@@ -1027,7 +1030,7 @@ void UGameManager::RewindTimeline()
 	}
 
 	Animator->Start(AnimationGroups, GroupIndices);
-	Gamemode->OnRewind(true, TurnCounter, Cameras[CameraIndex]);
+	Gamemode->OnRewind(true, TurnCounter, Cameras[CameraIndex], TimelineCounter);
 }
 
 void UGameManager::PostRewind()
