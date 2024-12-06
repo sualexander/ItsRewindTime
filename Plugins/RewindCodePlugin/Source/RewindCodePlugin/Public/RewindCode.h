@@ -22,6 +22,11 @@ class REWINDCODEPLUGIN_API URewindGameInstance : public UGameInstance
 public:
 	UPROPERTY(EditAnywhere)
 	TSoftObjectPtr<UWorld> OverworldLevel;
+	
+
+	UPROPERTY(EditAnywhere,BlueprintReadWrite)
+	int currTimelineCount = 0;
+
 
 	void OnGamemodeInit(UGameManager* GameManager);
 
@@ -56,11 +61,17 @@ public:
 	UPROPERTY()
 	UGameManager* GameManager;
 
+	UPROPERTY(EditAnywhere,BlueprintReadWrite)
+	bool isOverworld;
+
 	UFUNCTION(BlueprintImplementableEvent)
 	void OnTurnChanged(bool bAdvance, int32 TurnCounter);
 
 	UFUNCTION(BlueprintImplementableEvent)
 	void OnRewind(bool bStart, int32 NumTurns = 0, ACameraActor* Camera = nullptr, int32 CurrTimelineNum = 0);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnTurnZeroUndo(bool bStart, int32 NumTurns = 0, ACameraActor* Camera = nullptr);
 
 	UFUNCTION(BlueprintImplementableEvent)
 	void OnCollapse();
