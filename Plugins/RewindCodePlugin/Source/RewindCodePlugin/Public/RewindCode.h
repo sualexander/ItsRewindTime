@@ -312,9 +312,26 @@ struct SubTurn
 struct EntityAnimation
 {
 	EntityAnimation* Additional = nullptr;
-	virtual void Play(bool bIsUndo) = 0;
+	virtual void Play(bool bIsUndo) {}
 
+	EntityAnimation() = default;
 	virtual ~EntityAnimation() { delete Additional; }
+
+	EntityAnimation(const EntityAnimation& Other)
+	{
+		if (Other.Additional) {
+			Additional = new EntityAnimation(*Other.Additional);
+		}
+	}
+
+	EntityAnimation& operator=(const EntityAnimation& Other)
+	{
+		if (this != &Other) {
+			delete Additional;
+			Additional = Other.Additional ? new EntityAnimation(*Other.Additional) : nullptr;
+		}
+		return *this;
+	}
 };
 
 struct EntityFade : public EntityAnimation

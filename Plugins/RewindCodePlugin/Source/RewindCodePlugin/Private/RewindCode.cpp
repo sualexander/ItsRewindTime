@@ -495,6 +495,7 @@ void UGameManager::OnTurnEnd()
 	switch (State)
 	{
 	case Win:
+		UGameplayStatics::OpenLevelBySoftObjectPtr(this, StaticCast<URewindGameInstance*>(Gamemode->GetGameInstance())->OverworldLevel);
 		break;
 	case Rewinding:
 		PostRewind();
@@ -596,7 +597,6 @@ void UGameManager::ProcessTurn(EInputStates Input)
 	}
 
 	//Evaluate subturns
-	PotentialRewinders.Empty();
 	int32 EndIndex = -1;
 	for (int32 i = TimelineCounter; i >= 0; --i)
 	{
@@ -641,6 +641,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 			break;
 		}
 	}
+	PotentialRewinders.Empty();
 
 	if (!RewindQueue && !CollapseCandidates.IsEmpty()) {
 		CollapseQueue = CollapseCandidates[0].Value;
@@ -860,10 +861,6 @@ void UGameManager::UpdateEntityPosition(SubTurn& Subturn, AEntity* Entity, const
 
 	//Check for rewind tile
 	if (Entity->IsA<ASuperposition>()) return;
-	if ((Entity->Flags & SUPER)) {
-		PotentialRewinders.AddUnique(Entity);
-		return;
-	}
 
 	AEntity* Query = Grid.QueryAt(Entity->GridLocation + DownVector);
 	if (!Query) return;
@@ -872,12 +869,21 @@ void UGameManager::UpdateEntityPosition(SubTurn& Subturn, AEntity* Entity, const
 		return;
 	}
 	if (!RewindQueue && Query->Flags & REWIND) {
-		for (const Timeline& Timeline : Timelines)
-		{
-			if (Timeline.Rewinder == Entity && Timeline.NumTurns == TurnCounter) return;
-		}
+		if ((Entity->Flags & SUPER)) {
+			for (const Timeline& Timeline : Timelines)
+			{
+				if (Timeline.Rewinder == Entity && Timeline.NumTurns == TurnCounter) return;
+			}
 
-		RewindQueue = Entity;
+			PotentialRewinders.AddUnique(Entity);
+		} else {
+			for (const Timeline& Timeline : Timelines)
+			{
+				if (Timeline.Rewinder == Entity && Timeline.NumTurns == TurnCounter) return;
+			}
+
+			RewindQueue = Entity;
+		}
 	}
 	if (Query->Flags & GOAL) {
 		State = Win;
@@ -939,25 +945,8 @@ void UGameManager::RewindTimeline()
 	TMap<GridCoord, TArray<APlayerEntity*>> NewPersistent;
 	for (int32 i = 0; i < Players.Num(); ++i)
 	{
-		if (bMaxTimelines && i == 0) {
-			//APlayerEntity* Player = Players[i];
-			//if (Player->bInSuperposition) {
-			//	Player->
-
-			//	if (Player->Superposition->Players.Num() == 2) {
-			//		Player->Superposition->Players.Remove(Player);
-
-			//		APlayerEntity* Other = Player->Superposition->Players[0];
-			//		Other->bInSuperposition = false;
-			//		Other->
-			//	}
-			//}
-
-		}
-		else {
-			if (Players[i]->bInSuperposition) {
-				NewPersistent.FindOrAdd(Players[i]->GridLocation).Emplace(Players[i]);
-			}
+		if (Players[i]->bInSuperposition) {
+			NewPersistent.FindOrAdd(Players[i]->GridLocation).Emplace(Players[i]);
 		}
 	}
 
@@ -1151,6 +1140,11 @@ void UGameManager::CollapseTimeline(int32 Target)
 	Timeline.Subturns.Empty();
 	Timeline.Rewinder = nullptr;
 
+	for (int32 i = 0; i < Players.Num(); ++i)
+	{
+		Players[i]->GetStaticMeshComponent()->SetCustomPrimitiveDataFloat(0, i);
+	}
+
 	OnTurnEnd();
 }
 
@@ -1210,6 +1204,9 @@ APlayerEntity* UGameManager::SpawnPlayer()
 	APlayerEntity* Player = WorldContext->SpawnActor<APlayerEntity>(PlayerBlueprint, GetWorldLocation(StartGridLocation), Rotation);
 	Players.Emplace(Player);
 
+	if (bIsOverworld) {
+		Player->Offset -= FVector(0, 0, 1.6);
+	}
 	Player->AddActorWorldOffset(Player->Offset);
 	Player->Flags |= MOVEABLE | CLIMBABLE;
 	Player->GridLocation = StartGridLocation;
