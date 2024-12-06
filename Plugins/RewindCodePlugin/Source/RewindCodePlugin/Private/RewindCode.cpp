@@ -237,6 +237,13 @@ void UGameManager::HandleUndoInput()
 
 		RevaluateSuperpositions();
 		Timelines.RemoveAt(Timelines.Num() - 1);
+<<<<<<< Updated upstream
+=======
+
+		//Do special undo animation
+		Gamemode->OnTurnZeroUndo(true);
+		OnTurnEnd();
+>>>>>>> Stashed changes
 	}
 	else {
 		LOG("Undoed turn %d", TurnCounter);
@@ -269,11 +276,19 @@ void UGameManager::HandleUndoInput()
 
 void UGameManager::RevaluateSuperpositions()
 {
+<<<<<<< Updated upstream
 	for (ASuperposition* Super : Superpositions)
 	{
 		Super->Players.Empty();
 		Super->OldSuperposition = nullptr;
 		Super->SetActorHiddenInGame(true);
+=======
+	if (Animator->bIsAnimating) {
+		return;
+	}
+	if (State == Waiting) {
+		Gamemode->OnTurnChanged(false, 0); //TODO: not sure about this
+>>>>>>> Stashed changes
 
 		Grid.SetAt(Super->GridLocation, nullptr);
 		Super->GridLocation = GridCoord(-1, -1, -1);
@@ -682,6 +697,78 @@ bool UGameManager::CheckSuperposition(AEntity* To, AEntity* From)
 
 void UGameManager::RewindTimeline()
 {
+<<<<<<< Updated upstream
+=======
+	State = Rewinding;
+
+	//Check for new persistent superpositions
+	TArray<GridCoord> Persistent;
+	for (APlayerEntity* Player : Players)
+	{
+		if (Player->bInSuperposition) {
+			Persistent.AddUnique(Player->GridLocation);
+		}
+	}
+
+	for (const GridCoord& Location : Persistent)
+	{
+		AEntity* Entity = WorldContext->SpawnActor<AEntity>(SuperBlueprint, FVector::Zero(), Rotation);
+		Entity->Flags |= MOVEABLE | CLIMBABLE | PERSISTENT;
+		Entity->GridLocation = Location;
+		Entity->SetActorLocation(GetWorldLocation(Entity));
+		Entity->SetActorHiddenInGame(false);
+		//Slighly different material;
+
+		Grid.SetAt(Location, Entity);
+	}
+
+	//Traverse paths in reverse accounting for immovable blockers
+	TArray<EntityAnimationPath> AnimationGroups;
+	TArray<uint16> GroupIndices;
+	for (int32 SubturnIndex = Timelines[TimelineCounter].Subturns.Num() - 1; SubturnIndex >= 0; --SubturnIndex)
+	{
+		GroupIndices.Emplace(AnimationGroups.Num());
+
+		SubTurn& Subturn = Timelines[TimelineCounter].Subturns[SubturnIndex];
+		float MaxDuration = FMath::Max(Subturn.Durations);
+		for (int32 EntityIndex = 0; EntityIndex < Subturn.Entities.Num(); ++EntityIndex)
+		{
+			AEntity* Entity = Subturn.Entities[EntityIndex];
+			if (Entity->Flags & PERSISTENT) continue;
+
+			EntityAnimationPath& AnimPath = AnimationGroups.Emplace_GetRef(Entity, MaxDuration - Subturn.Durations[EntityIndex], SubturnIndex);
+
+			int32 PathIndex = EntityIndex == Subturn.PathIndices.Num() - 1 ? Subturn.Paths.Num() - 1 : Subturn.PathIndices[EntityIndex + 1] - 1;
+			for (; PathIndex >= Subturn.PathIndices[EntityIndex]; --PathIndex)
+			{
+				AEntity* Query = Grid.QueryAt(Subturn.Paths[PathIndex]);
+				if (Query) {
+					if (Query->Flags & MOVEABLE) {
+
+					}
+				}
+
+				if (Grid.QueryAt(Entity->GridLocation) == Entity) {
+					Grid.SetAt(Entity->GridLocation, nullptr);
+				}
+				Entity->GridLocation = Subturn.Paths[PathIndex];
+				Grid.SetAt(Entity->GridLocation, Entity);
+
+				AnimPath.Path.Emplace(GetWorldLocation(Entity));
+			}
+		}
+	}
+
+	Animator->Start(AnimationGroups, GroupIndices);
+	Gamemode->OnRewind(true, TurnCounter, Cameras[CameraIndex],TimelineCounter+1);
+}
+
+void UGameManager::PostRewind()
+{
+	Gamemode->OnRewind(false,0, nullptr, TimelineCounter + 1);
+
+	//Start new timeline
+>>>>>>> Stashed changes
 	Timelines[TimelineCounter].Rewinder = RewindQueue;
 	Timelines[TimelineCounter].NumTurns = TurnCounter;
 

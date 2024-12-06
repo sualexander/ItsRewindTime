@@ -29,7 +29,23 @@ public:
 	UGameManager* GameManager;
 
 	UFUNCTION(BlueprintImplementableEvent)
+<<<<<<< Updated upstream
 	void TurnChanged(int32 TurnCount);
+=======
+	void OnTurnChanged(bool bAdvance, int32 TurnCounter);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	//currTimelineNum is the number of Timelines after the rewind
+	void OnRewind(bool bStart, int32 NumTurns = 0, ACameraActor* Camera = nullptr, int currTimelineNum = 0);
+
+
+	UFUNCTION(BlueprintImplementableEvent)
+	//currTimelineNum is the number of Timelines after the rewind
+	void OnTurnZeroUndo(bool bStart, int32 NumTurns = 0, ACameraActor* Camera = nullptr);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnCollapse();
+>>>>>>> Stashed changes
 };
 
 UCLASS(BlueprintType, Blueprintable)
