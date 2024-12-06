@@ -46,8 +46,11 @@ class REWINDCODEPLUGIN_API ARewindWorldSettings : public AWorldSettings
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(EditAnywhere, meta = (DisplayName = "Max Timelines"))
+	int32 MaxTimelines = 2;
+
 	UPROPERTY(EditAnywhere, meta = (DisplayName = "Minimum Height"))
-	int8 HeightMin = 0;
+	int32 HeightMin = 0;
 
 	UPROPERTY()
 	FIntVector Dimensions;

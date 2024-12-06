@@ -72,3 +72,18 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+Content/Sounds/Music/Rewind_Time_Bass_Reversed_Track.uasset
+Content/Sounds/Music/Rewind_Time_Bass_Track.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_1_Reversed_Track.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_1_Track.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_2_Reversed_Track.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_2_Track.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_3_Reversed_Track.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_3_Track.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_4__melody__Reversed_Track.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_4_Track_melody_.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_solo_Reversed_Track.uasset
+Content/Sounds/Music/Rewind_Time_Guitar_Solo_Track.uasset
+Content/Sounds/Music/Rewind_Time_Pad_Track.uasset
+Content/Sounds/Music/Solo.uasset
+Content/Sounds/Music/SoloRev.uasset

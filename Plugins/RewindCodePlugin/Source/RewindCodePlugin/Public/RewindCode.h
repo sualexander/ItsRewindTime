@@ -60,10 +60,18 @@ public:
 	void OnTurnChanged(bool bAdvance, int32 TurnCounter);
 
 	UFUNCTION(BlueprintImplementableEvent)
-	void OnRewind(bool bStart, int32 NumTurns = 0, ACameraActor* Camera = nullptr);
+	void OnRewind(bool bStart, int32 NumTurns = 0, ACameraActor* Camera = nullptr, int32 CurrTimelineNum = 0);
 
 	UFUNCTION(BlueprintImplementableEvent)
 	void OnCollapse();
+
+	UPROPERTY(EditAnywhere)
+	UClass* BookClass;
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void UpdateBook(bool bOpen);
+	UFUNCTION(BlueprintImplementableEvent)
+	void Pause(bool bStart);
 };
 
 UCLASS()
@@ -104,7 +112,7 @@ public:
 	UEntityAnimator* Animator;
 
 	//Overworld
-	//TSubclassOf<AActor> 
+	UClass* BookClass = nullptr;
 
 	//Loading
 	void LoadLevel();
@@ -117,10 +125,7 @@ public:
 	{
 		RETURN_QUICK_DECLARE_CYCLE_STAT(UEntityAnimator, STATGROUP_Tickables);
 	}
-	bool IsTickable() const override
-	{
-		return RestartPresses != 0;
-	}
+	bool IsTickable() const override { return true; }
 
 	void HandleMovementInput();
 	EInputStates Buffer;
@@ -147,7 +152,7 @@ public:
 	void HandleEscapeInput();
 
 	void HandleMouseClick();
-
+	AActor* HitActor = nullptr;
 	//
 
 	void ProcessTurn(EInputStates Input);
@@ -171,6 +176,7 @@ public:
 	TArray<struct Timeline> Timelines;
 	int32 TurnCounter = 0;
 	int32 TimelineCounter = 0;
+	int32 MaxTimelines = 2;
 
 	TArray<APlayerEntity*> Players;
 	TArray<ASuperposition*> Superpositions;

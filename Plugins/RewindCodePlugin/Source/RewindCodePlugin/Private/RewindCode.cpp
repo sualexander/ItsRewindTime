@@ -74,6 +74,7 @@ void ARewindGameMode::PostLogin(APlayerController* InController)
 	GameManager = NewObject<UGameManager>(this);
 	GameManager->Gamemode = this;
 	GameManager->PlayerController = Cast<ARewindPlayerController>(InController);
+	GameManager->BookClass = BookClass;
 
 	ARewindPlayerController* Controller = GameManager->PlayerController;
 	Controller->OnInputChanged.BindUObject(GameManager, &UGameManager::HandleMovementInput);
@@ -198,15 +199,18 @@ void UGameManager::LoadLevel()
 
 			return AngleA < AngleB;
 		});
-	float Min = 420;
-	for (int32 i = 0; i < 4; ++i)
-	{
-		float Angle = FMath::Atan2(Cameras[i]->GetActorLocation().Y - Center.Y, Cameras[i]->GetActorLocation().X - Center.X);
-		LOG("%s, %f", *Cameras[i]->GetActorLabel(), Angle);
-		float Difference = FMath::Abs(Angle + (PI / 2));
-		if (Difference < Min) {
-			Min = Difference;
-			StartingIndex = i;
+	if (!bIsOverworld) {
+		float Min = 420;
+		for (int32 i = 0; i < 4; ++i)
+		{
+			if (!Cameras[i]) continue;
+			float Angle = FMath::Atan2(Cameras[i]->GetActorLocation().Y - Center.Y, Cameras[i]->GetActorLocation().X - Center.X);
+			LOG("%s, %f", *Cameras[i]->GetActorLabel(), Angle);
+			float Difference = FMath::Abs(Angle + (PI / 2));
+			if (Difference < Min) {
+				Min = Difference;
+				StartingIndex = i;
+			}
 		}
 	}
 	CameraIndex = StartingIndex;
@@ -395,6 +399,7 @@ void UGameManager::HandleRestartInput(bool bStart)
 }
 
 void UGameManager::Tick(float DeltaTime) {
+	if (!WorldContext) return;
 	if (WorldContext->RealTimeSeconds - RestartTimerStart > 0.25) {
 		//If at 0.3 seconds it's only pressed once, do normal
 		if (RestartPresses <= 1) {
@@ -432,27 +437,48 @@ void UGameManager::Tick(float DeltaTime) {
 	}
 
 	//Mouse raycast
+	if (State == Paused) return;
+
 	FVector Start, Direction;
 	PlayerController->DeprojectMousePositionToWorld(Start, Direction);
 
 	FHitResult OutHit;
-	if (WorldContext->LineTraceSingleByChannel(OutHit, Start, Start + (Start * 5000), ECollisionChannel::ECC_Visibility)) {
+	if (WorldContext->LineTraceSingleByChannel(OutHit, Start, Start + (Direction * 5000), ECollisionChannel::ECC_Visibility)) {
 		if (bIsOverworld) {
-
+			if (OutHit.GetActor() != HitActor) {
+				if (OutHit.GetActor() && OutHit.GetActor()->IsA(BookClass)) Gamemode->UpdateBook(true);
+				else if (HitActor && HitActor->IsA(BookClass)) Gamemode->UpdateBook(false);
+				HitActor = OutHit.GetActor();
+			}
+		}
+		else {
 
 		}
 	}
-
 }
 
 void UGameManager::HandleEscapeInput()
 {
-
+	if (State != Paused) {
+		Gamemode->Pause(true);
+		State = Paused;
+	}
+	else {
+		Gamemode->Pause(false);
+		State = Waiting;
+	}
 }
 
 void UGameManager::HandleMouseClick()
 {
-
+	if (bIsOverworld) {
+		if (State != Paused) {
+			if (HitActor && HitActor->IsA(BookClass)) {
+				State = Paused;
+				Gamemode->Pause(true);
+			}
+		}
+	}
 }
 
 //GAME LOOP
@@ -525,22 +551,18 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		//TODO: need visual cue
 		LOG("Passed turn %d", TurnCounter + 1);
 	}
-	float Normalized = FMath::Fmod(Rotation.Yaw, 360);
-	Normalized += 360 * (Normalized < 0);
-	int32 Turns = FMath::RoundToInt(Normalized / 90) % 4;
-	Turns = (Turns + (CameraIndex - StartingIndex) + 4) % 4;
-	LOG("%d", Turns);
+	int32 Turns = (FMath::RoundToInt((Rotation.Yaw + (((CameraIndex + StartingIndex) % 4) * 90)) / 90) % 4 + 4) % 4;
 	switch (Turns)
 	{
 	case 0: break;
 	case 1:
-		MoveInput = { MoveInput.Y, -MoveInput.X, 0 };
+		MoveInput = { -MoveInput.Y, MoveInput.X, 0 };
 		break;
 	case 2:
 		MoveInput = { -MoveInput.X, -MoveInput.Y, 0 };
 		break;
 	case 3:
-		MoveInput = { -MoveInput.Y, MoveInput.X, 0 };
+		MoveInput = { MoveInput.Y, -MoveInput.X, 0 };
 	}
 
 	AEntity* CurrentPlayer = Players.Last();
