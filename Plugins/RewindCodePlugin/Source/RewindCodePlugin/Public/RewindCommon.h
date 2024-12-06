@@ -36,8 +36,8 @@ public:
 	UPROPERTY()
 	GridType Type;
 
-	UPROPERTY(EditAnywhere)
-	int32 PuzzleIndex = -1;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TSoftObjectPtr<UWorld> PuzzleLevel = nullptr;
 };
 
 UCLASS()
@@ -57,4 +57,7 @@ public:
 	FVector BlockScale;
 	UPROPERTY()
 	TArray<uint8> GridData;
+
+	UPROPERTY()
+	TMap<int32, TSoftObjectPtr<UWorld>> PuzzleMap;
 };

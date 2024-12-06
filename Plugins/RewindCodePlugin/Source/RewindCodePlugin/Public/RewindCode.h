@@ -103,6 +103,9 @@ public:
 	UPROPERTY()
 	UEntityAnimator* Animator;
 
+	//Overworld
+	//TSubclassOf<AActor> 
+
 	//Loading
 	void LoadLevel();
 	void UnloadLevel();
@@ -130,6 +133,7 @@ public:
 	void OnCameraBlendComplete();
 	TArray<class ACameraActor*> Cameras;
 	int32 CameraIndex = 0;
+	int32 StartingIndex = 0;
 	double RedundancyTimer = 0;
 
 	void HandleUndoInput();
@@ -141,6 +145,8 @@ public:
 	bool bRestartSecond = false;
 
 	void HandleEscapeInput();
+
+	void HandleMouseClick();
 
 	//
 
@@ -157,6 +163,9 @@ public:
 		Loading,
 		Win
 	};
+
+	TSoftObjectPtr<UWorld> EnterPuzzle = nullptr;
+	TMap<AEntity*, TSoftObjectPtr<UWorld>> PuzzleMap;
 
 	GameState State = Loading;
 	TArray<struct Timeline> Timelines;
@@ -218,7 +227,8 @@ enum EntityFlags : uint32
 	GOAL				= 1 << 4,
 	REWIND				= 1 << 5,
 	CARRIED				= 1 << 6,
-	CURRENT_PLAYER		= 1 << 7
+	CURRENT_PLAYER		= 1 << 7,
+	LOADING_TILE		= 1 << 8
 };
 
 UCLASS()

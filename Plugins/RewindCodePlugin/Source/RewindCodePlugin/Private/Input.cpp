@@ -10,6 +10,7 @@
 ARewindPlayerController::ARewindPlayerController()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	bShowMouseCursor = true;
 }
 
 void ARewindPlayerController::SetupInputComponent()
@@ -47,7 +48,7 @@ void ARewindPlayerController::SetupInputComponent()
 	InputMapping->MapKey(PassTurnAction, EKeys::SpaceBar);
 	InputMapping->MapKey(RotateCameraAction, EKeys::Q);
 	InputMapping->MapKey(RotateCameraAction, EKeys::E).Modifiers.Emplace(Negate);
-	InputMapping->MapKey(UndoAction, EKeys::LeftShift);
+	InputMapping->MapKey(UndoAction, EKeys::Z);
 	InputMapping->MapKey(RestartAction, EKeys::R);
 	InputMapping->MapKey(EscapeAction, EKeys::Escape);
 	InputMapping->MapKey(EscapeAction, EKeys::P); //TODO: only for debug

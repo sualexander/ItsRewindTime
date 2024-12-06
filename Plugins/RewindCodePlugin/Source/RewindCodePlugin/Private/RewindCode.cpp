@@ -34,9 +34,8 @@ DEFINE_LOG_CATEGORY_STATIC(RewindGame, Log, All);
 
 void URewindGameInstance::OnGamemodeInit(UGameManager* GameManager)
 {
-	GameManager->LoadLevel();
 	GameManager->bIsOverworld = GetWorld() == OverworldLevel.Get();
-	LOG("%s", GameManager->bIsOverworld ? TEXT("True") : TEXT("False"));
+	GameManager->LoadLevel();
 }
 
 void URewindGameInstance::EnterPuzzle()
@@ -83,6 +82,7 @@ void ARewindGameMode::PostLogin(APlayerController* InController)
 	Controller->OnUndoPressed.BindUObject(GameManager, &UGameManager::HandleUndoInput);
 	Controller->OnRestartPressed.BindUObject(GameManager, &UGameManager::HandleRestartInput);
 	Controller->OnEscapePressed.BindUObject(GameManager, &UGameManager::HandleEscapeInput);
+	Controller->OnMouseClicked.BindUObject(GameManager, &UGameManager::HandleMouseClick);
 
 	StaticCast<URewindGameInstance*>(GetGameInstance())->OnGamemodeInit(GameManager);
 }
@@ -175,7 +175,14 @@ void UGameManager::LoadLevel()
 		case GridType::Rewind:
 			Entity->Flags |= REWIND;
 			break;
-		}	
+		}
+
+		if (bIsOverworld) {
+			if (Settings->PuzzleMap.Find(i)) {
+				PuzzleMap.Emplace(Entity, Settings->PuzzleMap[i]);
+				Entity->Flags |= LOADING_TILE;
+			}
+		}
 	}
 
 	//Initialize cameras
@@ -188,9 +195,21 @@ void UGameManager::LoadLevel()
 		{
 			float AngleA = FMath::Atan2(A.GetActorLocation().Y - Center.Y, A.GetActorLocation().X - Center.X);
 			float AngleB = FMath::Atan2(B.GetActorLocation().Y - Center.Y, B.GetActorLocation().X - Center.X);
+
 			return AngleA < AngleB;
 		});
-	PlayerController->SetViewTarget(Cameras[0]);
+	float Min = 420;
+	for (int32 i = 0; i < 4; ++i)
+	{
+		float Angle = FMath::Atan2(Cameras[i]->GetActorLocation().Y - Center.Y, Cameras[i]->GetActorLocation().X - Center.X);
+		float Difference = FMath::Abs(Angle + (PI / 2));
+		if (Difference < Min) {
+			Min = Difference;
+			StartingIndex = i;
+		}
+	}
+	CameraIndex = StartingIndex;
+	PlayerController->SetViewTarget(Cameras[CameraIndex]);
 	PlayerController->PlayerCameraManager->OnBlendComplete().AddUObject(this, &UGameManager::OnCameraBlendComplete);
 
 	//Data
@@ -253,7 +272,7 @@ void UGameManager::HandleCameraInput(float Direction)
 		RedundancyTimer = WorldContext->TimeSeconds;
 		PlayerController->SetViewTargetWithBlend(Cameras[CameraIndex], 0.5);
 	}
-	else if (WorldContext->TimeSeconds - RedundancyTimer > 5) {
+	else if (WorldContext->TimeSeconds - RedundancyTimer > 2) {
 		LOG("OnCameraBlendComplete failed, fallback to timer :(");
 		State = Waiting;
 		HandleCameraInput(Direction);
@@ -386,7 +405,7 @@ void UGameManager::Tick(float DeltaTime) {
 				RevaluateSuperpositions(true);
 			}
 		}
-		//else do hard reset 
+		//else do hard reset
 		else {
 			LOG("I am really restarded %d", TurnCounter);
 			//TODO: Gamemode->something
@@ -397,9 +416,27 @@ void UGameManager::Tick(float DeltaTime) {
 		//Set number of times pressed to zero
 		RestartPresses = 0;
 	}
+
+	//Mouse raycast
+	FVector Start, Direction;
+	PlayerController->DeprojectMousePositionToWorld(Start, Direction);
+
+	FHitResult OutHit;
+	if (WorldContext->LineTraceSingleByChannel(OutHit, Start, Start + (Start * 5000), ECollisionChannel::ECC_Visibility)) {
+		if (bIsOverworld) {
+
+
+		}
+	}
+
 }
 
 void UGameManager::HandleEscapeInput()
+{
+
+}
+
+void UGameManager::HandleMouseClick()
 {
 
 }
@@ -410,6 +447,11 @@ void UGameManager::HandleEscapeInput()
 void UGameManager::OnTurnEnd()
 {
 	LOG("Ending Turn %d", TurnCounter);
+
+	if (EnterPuzzle.IsPending()) {
+		UGameplayStatics::OpenLevelBySoftObjectPtr(this, EnterPuzzle);
+		return;
+	}
 
 	switch (State)
 	{
@@ -469,7 +511,7 @@ void UGameManager::ProcessTurn(EInputStates Input)
 		//TODO: need visual cue
 		LOG("Passed turn %d", TurnCounter + 1);
 	}
-	int32 Turns = (FMath::RoundToInt((Rotation.Yaw + (CameraIndex * 90)) / 90) % 4 + 4) % 4;
+	int32 Turns = (FMath::RoundToInt((Rotation.Yaw + (((CameraIndex + StartingIndex) % 4) * 90)) / 90) % 4 + 4) % 4;
 	switch (Turns)
 	{
 	case 0: break;
@@ -766,6 +808,10 @@ void UGameManager::UpdateEntityPosition(SubTurn& Subturn, AEntity* Entity, const
 
 	AEntity* Query = Grid.QueryAt(Entity->GridLocation + DownVector);
 	if (!Query) return;
+	if (bIsOverworld && (Query->Flags & LOADING_TILE)) {
+		EnterPuzzle = PuzzleMap[Query];
+		return;
+	}
 	if (!RewindQueue && Query->Flags & REWIND) {
 		for (const Timeline& Timeline : Timelines)
 		{

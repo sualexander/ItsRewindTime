@@ -690,8 +690,9 @@ void URewindEditorMode::SaveToSettings()
 	if (ARewindWorldSettings* Settings = Cast<ARewindWorldSettings>(GetWorld()->GetWorldSettings())) {
 		Settings->Modify();
 
-		FVector Scale;
+		FVector Scale(0, 0, 0);
 		TArray<uint8>& Data = Settings->GridData;
+		Settings->PuzzleMap.Empty();
 
 		FIntVector NewDimensions = Dimensions + FIntVector(2, 2, 2);
 		Data.Init(0, NewDimensions.X * NewDimensions.Y * NewDimensions.Z);
@@ -703,7 +704,10 @@ void URewindEditorMode::SaveToSettings()
 
 					if (GridInternal[OldIndex]) {
 						Data[NewIndex] = StaticCast<uint8>(GridInternal[OldIndex]->Type);
-						Scale = GridInternal[OldIndex]->GetStaticMeshComponent()->GetStaticMesh()->GetBoundingBox().GetSize();
+						if (!GridInternal[OldIndex]->PuzzleLevel.IsNull()) {
+							Settings->PuzzleMap.Emplace(NewIndex, GridInternal[OldIndex]->PuzzleLevel);
+						}
+						if (Scale.IsZero()) Scale = GridInternal[OldIndex]->GetStaticMeshComponent()->GetStaticMesh()->GetBoundingBox().GetSize();
 					}
 				}
 			}
