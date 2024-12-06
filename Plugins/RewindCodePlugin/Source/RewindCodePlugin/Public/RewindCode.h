@@ -175,6 +175,7 @@ public:
 	TArray<APlayerEntity*> Players;
 	TArray<ASuperposition*> Superpositions;
 
+	TArray<AEntity*> PotentialRewinders;
 	void EvaluateSubTurn(struct SubTurnHeader& Header, struct SubTurn& Subturn);
 	void UpdateEntityPosition(struct SubTurn& Subturn, AEntity* Entity, const GridCoord& Delta);
 	bool CheckSuperposition(AEntity* To, AEntity* From);
