@@ -205,7 +205,6 @@ void UGameManager::LoadLevel()
 		{
 			if (!Cameras[i]) continue;
 			float Angle = FMath::Atan2(Cameras[i]->GetActorLocation().Y - Center.Y, Cameras[i]->GetActorLocation().X - Center.X);
-			LOG("%s, %f", *Cameras[i]->GetActorLabel(), Angle);
 			float Difference = FMath::Abs(Angle + (PI / 2));
 			if (Difference < Min) {
 				Min = Difference;
@@ -488,7 +487,7 @@ void UGameManager::OnTurnEnd()
 {
 	LOG("Ending Turn %d", TurnCounter);
 
-	if (EnterPuzzle.IsPending()) {
+	if (!EnterPuzzle.IsNull()) {
 		UGameplayStatics::OpenLevelBySoftObjectPtr(this, EnterPuzzle);
 		return;
 	}
@@ -934,12 +933,31 @@ void UGameManager::RewindTimeline()
 {
 	State = Rewinding;
 
+	bool bMaxTimelines = TimelineCounter == MaxTimelines;
+
 	//Check for new persistent superpositions
 	TMap<GridCoord, TArray<APlayerEntity*>> NewPersistent;
-	for (APlayerEntity* Player : Players)
+	for (int32 i = 0; i < Players.Num(); ++i)
 	{
-		if (Player->bInSuperposition) {
-			NewPersistent.FindOrAdd(Player->GridLocation).Emplace(Player);
+		if (bMaxTimelines && i == 0) {
+			//APlayerEntity* Player = Players[i];
+			//if (Player->bInSuperposition) {
+			//	Player->
+
+			//	if (Player->Superposition->Players.Num() == 2) {
+			//		Player->Superposition->Players.Remove(Player);
+
+			//		APlayerEntity* Other = Player->Superposition->Players[0];
+			//		Other->bInSuperposition = false;
+			//		Other->
+			//	}
+			//}
+
+		}
+		else {
+			if (Players[i]->bInSuperposition) {
+				NewPersistent.FindOrAdd(Players[i]->GridLocation).Emplace(Players[i]);
+			}
 		}
 	}
 
