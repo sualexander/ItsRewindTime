@@ -31,6 +31,8 @@ public:
 	void OnGamemodeInit(UGameManager* GameManager);
 
 	void EnterPuzzle();
+
+	TSoftObjectPtr<UWorld> CurrentLevel;
 };
 
 UCLASS()
@@ -83,6 +85,15 @@ public:
 	void UpdateBook(bool bOpen);
 	UFUNCTION(BlueprintImplementableEvent)
 	void Pause(bool bStart);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnMove();
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnPuzzle(const TSoftObjectPtr<UWorld>& Level);
+
+	UFUNCTION(BlueprintCallable)
+	void OnAfterPuzzle();
 };
 
 UCLASS()
@@ -390,6 +401,7 @@ class REWINDCODEPLUGIN_API UEntityAnimator : public UObject, public FTickableGam
 	GENERATED_BODY()
 
 public:
+	ARewindGameMode* Gamemode;
 	UWorld* WorldContext;
 	FTransform Transform;
 	FVector Offset;

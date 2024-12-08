@@ -75,6 +75,7 @@ void ARewindGameMode::PostLogin(APlayerController* InController)
 	GameManager->Gamemode = this;
 	GameManager->PlayerController = Cast<ARewindPlayerController>(InController);
 	GameManager->BookClass = BookClass;
+	GameManager->Animator->Gamemode = this;
 
 	ARewindPlayerController* Controller = GameManager->PlayerController;
 	Controller->OnInputChanged.BindUObject(GameManager, &UGameManager::HandleMovementInput);
@@ -271,6 +272,7 @@ void UGameManager::HandlePassInput(bool bStart)
 
 void UGameManager::HandleCameraInput(float Direction)
 {
+	if (bIsOverworld) return;
 	if (State == Waiting) {
 		State = Loading;
 		CameraIndex = (CameraIndex + FMath::RoundToInt(Direction) + 4) % 4;
@@ -376,7 +378,10 @@ void UGameManager::HandleUndoInput()
 }
 
 void UGameManager::HandleRestartInput(bool bStart)
-{
+{	
+	if (Animator->bIsAnimating) {
+		return;
+	}
 	if (State == Waiting) {
 		Gamemode->OnTurnChanged(false, 0); //TODO: not sure about this
 
@@ -429,7 +434,8 @@ void UGameManager::Tick(float DeltaTime) {
 		//else do hard reset
 		else {
 			LOG("I am really restarded %d", TurnCounter);
-			//TODO: Gamemode->something
+			TSoftObjectPtr<UWorld> Level = StaticCast<URewindGameInstance*>(Gamemode->GetGameInstance())->CurrentLevel;
+			UGameplayStatics::OpenLevelBySoftObjectPtr(this, Level);
 		}
 
 		//Set RestartTimeStart to max
@@ -461,13 +467,18 @@ void UGameManager::Tick(float DeltaTime) {
 
 void UGameManager::HandleEscapeInput()
 {
-	if (State != Paused) {
-		Gamemode->Pause(true);
-		State = Paused;
+	if (bIsOverworld) {
+		if (State != Paused) {
+			Gamemode->Pause(true);
+			State = Paused;
+		}
+		else {
+			Gamemode->Pause(false);
+			State = Waiting;
+		}
 	}
 	else {
-		Gamemode->Pause(false);
-		State = Waiting;
+		UGameplayStatics::OpenLevelBySoftObjectPtr(this, StaticCast<URewindGameInstance*>(Gamemode->GetGameInstance())->OverworldLevel);
 	}
 }
 
@@ -483,6 +494,11 @@ void UGameManager::HandleMouseClick()
 	}
 }
 
+void ARewindGameMode::OnAfterPuzzle()
+{
+	UGameplayStatics::OpenLevelBySoftObjectPtr(this, GameManager->EnterPuzzle);
+}
+
 //GAME LOOP
 //----------------------------------------------------------------------------------------------------------------------------------
 
@@ -491,7 +507,9 @@ void UGameManager::OnTurnEnd()
 	LOG("Ending Turn %d", TurnCounter);
 
 	if (!EnterPuzzle.IsNull()) {
-		UGameplayStatics::OpenLevelBySoftObjectPtr(this, EnterPuzzle);
+		State = Loading;
+		StaticCast<URewindGameInstance*>(Gamemode->GetGameInstance())->CurrentLevel = EnterPuzzle;
+		Gamemode->OnPuzzle(EnterPuzzle);
 		return;
 	}
 
@@ -1384,6 +1402,8 @@ void UEntityAnimator::Tick(float DeltaTime)
 	int32 EndIndex = QueueIndex == GroupIndices.Num() - 1 ? GroupQueue.Num() - 1 : GroupIndices[QueueIndex + 1] - 1;
 	for (int32 i = StartIndex; i <= EndIndex; ++i)
 	{
+		Gamemode->OnMove();
+
 		EntityAnimationPath& Animation = GroupQueue[i];
 		if (Animation.PathIndex == -1) continue; //Animation is complete
 
